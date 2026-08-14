@@ -104,7 +104,13 @@
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsSelected" Value="True">
                             <Setter TargetName="Bd" Property="Background" Value="White" />
-                            <Setter Property="Foreground" Value="Black" />
+                            <!--
+                                Override the header text foreground on the header
+                                ContentPresenter only, so we don't inherit Black
+                                onto the tab's content (which sits over a themed
+                                background and needs the theme foreground).
+                            -->
+                            <Setter TargetName="Content" Property="TextElement.Foreground" Value="Black" />
                         </Trigger>
                         <MultiTrigger>
                             <MultiTrigger.Conditions>
@@ -133,7 +139,12 @@
 
     <Style TargetType="{x:Type ComboBox}">
         <Setter Property="Background" Value="{DynamicResource ControlBackgroundBrush}" />
-        <Setter Property="Foreground" Value="{DynamicResource ControlForegroundBrush}" />
+        <!--
+            Foreground is fixed to Black because the default Aero2 ComboBox
+            selection box chrome is always a light gradient regardless of the
+            app theme; a light foreground here would be invisible.
+        -->
+        <Setter Property="Foreground" Value="Black" />
         <Setter Property="BorderBrush" Value="{DynamicResource ControlBorderBrush}" />
     </Style>
 
