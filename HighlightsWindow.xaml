@@ -1,0 +1,59 @@
+<Window x:Class="HttpTraceAnalyser.HighlightsWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:sys="clr-namespace:System;assembly=System.Runtime"
+        xmlns:model="clr-namespace:HttpTraceAnalyser.Model"
+        xmlns:local="clr-namespace:HttpTraceAnalyser"
+        Title="Highlights" Height="420" Width="760"
+        WindowStartupLocation="CenterOwner">
+    <Window.Resources>
+        <ObjectDataProvider x:Key="ColumnValues" MethodName="GetValues" ObjectType="{x:Type sys:Enum}">
+            <ObjectDataProvider.MethodParameters>
+                <x:Type TypeName="model:HighlightColumn" />
+            </ObjectDataProvider.MethodParameters>
+        </ObjectDataProvider>
+        <ObjectDataProvider x:Key="OperatorValues" MethodName="GetValues" ObjectType="{x:Type sys:Enum}">
+            <ObjectDataProvider.MethodParameters>
+                <x:Type TypeName="model:HighlightOperator" />
+            </ObjectDataProvider.MethodParameters>
+        </ObjectDataProvider>
+    </Window.Resources>
+    <DockPanel Margin="8">
+        <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal"
+                    HorizontalAlignment="Right" Margin="0,8,0,0">
+            <Button Content="Add" Width="80" Margin="0,0,8,0" Click="AddButton_Click" />
+            <Button Content="Remove" Width="80" Margin="0,0,8,0" Click="RemoveButton_Click" />
+            <Button Content="Close" Width="80" IsCancel="True" IsDefault="True" />
+        </StackPanel>
+
+        <TextBlock DockPanel.Dock="Top" Margin="0,0,0,6" TextWrapping="Wrap"
+                   Text="Rules are evaluated top-to-bottom; the first matching enabled rule sets the row colour. Colours use #RRGGBB (foreground may be blank)." />
+
+        <DataGrid x:Name="RulesGrid" AutoGenerateColumns="False"
+                  CanUserAddRows="False" CanUserDeleteRows="False"
+                  SelectionMode="Extended">
+            <DataGrid.Columns>
+                <DataGridCheckBoxColumn Header="On"
+                                        Binding="{Binding IsEnabled, UpdateSourceTrigger=PropertyChanged}"
+                                        Width="40" />
+                <DataGridComboBoxColumn Header="Column"
+                                        ItemsSource="{Binding Source={StaticResource ColumnValues}}"
+                                        SelectedItemBinding="{Binding Column}"
+                                        Width="100" />
+                <DataGridComboBoxColumn Header="Operator"
+                                        ItemsSource="{Binding Source={StaticResource OperatorValues}}"
+                                        SelectedItemBinding="{Binding Operator}"
+                                        Width="110" />
+                <DataGridTextColumn Header="Value"
+                                    Binding="{Binding Value, UpdateSourceTrigger=PropertyChanged}"
+                                    Width="180" />
+                <DataGridTextColumn Header="Background"
+                                    Binding="{Binding BackgroundColor, Converter={x:Static local:HighlightsWindow.ColorConverter}, UpdateSourceTrigger=LostFocus}"
+                                    Width="110" />
+                <DataGridTextColumn Header="Foreground"
+                                    Binding="{Binding ForegroundColor, Converter={x:Static local:HighlightsWindow.NullableColorConverter}, UpdateSourceTrigger=LostFocus}"
+                                    Width="110" />
+            </DataGrid.Columns>
+        </DataGrid>
+    </DockPanel>
+</Window>

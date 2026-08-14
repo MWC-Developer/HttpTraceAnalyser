@@ -1,0 +1,386 @@
+﻿<Window x:Class="HttpTraceAnalyser.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:local="clr-namespace:HttpTraceAnalyser"
+        xmlns:model="clr-namespace:HttpTraceAnalyser.Model"
+        xmlns:sys="clr-namespace:System;assembly=mscorlib"
+        xmlns:avalonedit="http://icsharpcode.net/sharpdevelop/avalonedit"
+        xmlns:svgc="http://sharpvectors.codeplex.com/svgc/"
+        mc:Ignorable="d"
+        Title="HTTP Trace Analyser" Height="600" Width="1000">
+    <Window.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVis" />
+        <ObjectDataProvider x:Key="FilterFieldValues" MethodName="GetValues" ObjectType="{x:Type sys:Enum}">
+            <ObjectDataProvider.MethodParameters>
+                <x:Type TypeName="model:FilterField" />
+            </ObjectDataProvider.MethodParameters>
+        </ObjectDataProvider>
+        <ObjectDataProvider x:Key="FilterComparatorValues" MethodName="GetValues" ObjectType="{x:Type sys:Enum}">
+            <ObjectDataProvider.MethodParameters>
+                <x:Type TypeName="model:FilterComparator" />
+            </ObjectDataProvider.MethodParameters>
+        </ObjectDataProvider>
+        <ObjectDataProvider x:Key="FilterCombinatorValues" MethodName="GetValues" ObjectType="{x:Type sys:Enum}">
+            <ObjectDataProvider.MethodParameters>
+                <x:Type TypeName="model:FilterCombinator" />
+            </ObjectDataProvider.MethodParameters>
+        </ObjectDataProvider>
+    </Window.Resources>
+    <DockPanel>
+        <ToolBarTray DockPanel.Dock="Top">
+            <ToolBar>
+                <Button x:Name="OpenFileButton" Content="Open file" Click="OpenFileButton_Click" />
+                <Separator />
+                <Button x:Name="HighlightsButton" Content="Highlights" Click="HighlightsButton_Click" />
+                <ToggleButton x:Name="FilterButton" Content="Filter" />
+            </ToolBar>
+        </ToolBarTray>
+
+        <Grid>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="560" MinWidth="200" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" MinWidth="200" />
+            </Grid.ColumnDefinitions>
+
+            <Grid Grid.Column="0">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+
+                <Border x:Name="FilterEditor" Grid.Row="0"
+                        Background="#FFF3F3F3"
+                        BorderBrush="Gray" BorderThickness="0,0,0,1"
+                        Padding="6"
+                        Visibility="{Binding IsChecked, ElementName=FilterButton, Converter={StaticResource BoolToVis}}">
+                    <StackPanel>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <ComboBox x:Name="RuleCombinatorCombo" Grid.Column="0"
+                                      Width="60" Margin="0,0,4,0"
+                                      ItemsSource="{Binding Source={StaticResource FilterCombinatorValues}}"
+                                      SelectedIndex="0" />
+                            <ComboBox x:Name="RuleFieldCombo" Grid.Column="1"
+                                      Width="90" Margin="0,0,4,0"
+                                      ItemsSource="{Binding Source={StaticResource FilterFieldValues}}"
+                                      SelectedIndex="0" />
+                            <ComboBox x:Name="RuleComparatorCombo" Grid.Column="2"
+                                      Width="110" Margin="0,0,4,0"
+                                      ItemsSource="{Binding Source={StaticResource FilterComparatorValues}}"
+                                      SelectedIndex="0" />
+                            <TextBox x:Name="RuleValueText" Grid.Column="3" Margin="0,0,4,0"
+                                     VerticalContentAlignment="Center" />
+                            <Button Grid.Column="4" Content="Add" MinWidth="60" Click="AddRule_Click" />
+                        </Grid>
+
+                        <ListBox x:Name="ActiveFiltersList" Margin="0,6,0,0" MaxHeight="120"
+                                 HorizontalContentAlignment="Stretch">
+                            <ListBox.ItemTemplate>
+                                <DataTemplate>
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="44" />
+                                            <ColumnDefinition Width="90" />
+                                            <ColumnDefinition Width="110" />
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Grid.Column="0" Text="{Binding Combinator}"
+                                                   FontStyle="Italic" Foreground="Gray"
+                                                   VerticalAlignment="Center" />
+                                        <TextBlock Grid.Column="1" Text="{Binding Field}"
+                                                   FontWeight="Bold" VerticalAlignment="Center" />
+                                        <TextBlock Grid.Column="2" Text="{Binding Comparator}"
+                                                   VerticalAlignment="Center" />
+                                        <TextBlock Grid.Column="3" Text="{Binding Value}"
+                                                   VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                                        <Button Grid.Column="4" Content="&#x2715;" Padding="6,0"
+                                                Click="RemoveRule_Click" Tag="{Binding}" />
+                                    </Grid>
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
+
+                        <StackPanel Orientation="Horizontal" Margin="0,4,0,0"
+                                    HorizontalAlignment="Right">
+                            <Button Content="Clear all" Click="ClearRules_Click" MinWidth="70" />
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+
+                <ListView x:Name="RequestList" Grid.Row="1"
+                          SelectionMode="Extended"
+                          SelectionChanged="RequestList_SelectionChanged"
+                          GridViewColumnHeader.Click="RequestList_HeaderClick">
+                <ListView.ItemContainerStyle>
+                    <Style TargetType="ListViewItem" BasedOn="{StaticResource {x:Static GridView.GridViewItemContainerStyleKey}}">
+                        <Setter Property="Background"
+                                Value="{Binding RowBackground,
+                                                TargetNullValue={x:Null},
+                                                FallbackValue={x:Null}}" />
+                        <Setter Property="Foreground"
+                                Value="{Binding RowForeground,
+                                                TargetNullValue={x:Static SystemColors.ControlTextBrush},
+                                                FallbackValue={x:Static SystemColors.ControlTextBrush}}" />
+                    </Style>
+                </ListView.ItemContainerStyle>
+                <ListView.ContextMenu>
+                    <ContextMenu>
+                        <MenuItem Header="Remove" Click="RemoveItems_Click" />
+                    </ContextMenu>
+                </ListView.ContextMenu>
+                <ListView.View>
+                    <GridView>
+                        <GridView.ColumnHeaderContextMenu>
+                            <ContextMenu>
+                                <MenuItem Header="Date" IsCheckable="True" IsChecked="False"
+                                          Tag="{x:Reference DateColumn}"
+                                          Checked="ColumnVisibility_Changed" Unchecked="ColumnVisibility_Changed" />
+                                <MenuItem Header="Time" IsCheckable="True" IsChecked="True"
+                                          Tag="{x:Reference TimeColumn}"
+                                          Checked="ColumnVisibility_Changed" Unchecked="ColumnVisibility_Changed" />
+                                <MenuItem Header="Method" IsCheckable="True" IsChecked="True"
+                                          Tag="{x:Reference MethodColumn}"
+                                          Checked="ColumnVisibility_Changed" Unchecked="ColumnVisibility_Changed" />
+                                <MenuItem Header="Response" IsCheckable="True" IsChecked="True"
+                                          Tag="{x:Reference ResponseColumn}"
+                                          Checked="ColumnVisibility_Changed" Unchecked="ColumnVisibility_Changed" />
+                                <MenuItem Header="URL" IsCheckable="True" IsChecked="False"
+                                          Tag="{x:Reference UrlColumn}"
+                                          Checked="ColumnVisibility_Changed" Unchecked="ColumnVisibility_Changed" />
+                                <MenuItem Header="Host" IsCheckable="True" IsChecked="True"
+                                          Tag="{x:Reference HostColumn}"
+                                          Checked="ColumnVisibility_Changed" Unchecked="ColumnVisibility_Changed" />
+                                <MenuItem Header="Path" IsCheckable="True" IsChecked="True"
+                                          Tag="{x:Reference PathColumn}"
+                                          Checked="ColumnVisibility_Changed" Unchecked="ColumnVisibility_Changed" />
+                            </ContextMenu>
+                        </GridView.ColumnHeaderContextMenu>
+                        <GridViewColumn x:Name="DateColumn" Header="Date" Width="0"
+                                        DisplayMemberBinding="{Binding Date}" />
+                        <GridViewColumn x:Name="TimeColumn" Header="Time" Width="90"
+                                        DisplayMemberBinding="{Binding Time}" />
+                        <GridViewColumn x:Name="MethodColumn" Header="Method" Width="70"
+                                        DisplayMemberBinding="{Binding Method}" />
+                        <GridViewColumn x:Name="ResponseColumn" Header="Response" Width="55"
+                                        DisplayMemberBinding="{Binding Response}" />
+                        <GridViewColumn x:Name="UrlColumn" Header="URL" Width="0"
+                                        DisplayMemberBinding="{Binding Url}" />
+                        <GridViewColumn x:Name="HostColumn" Header="Host" Width="160"
+                                        DisplayMemberBinding="{Binding Host}" />
+                        <GridViewColumn x:Name="PathColumn" Header="Path" Width="240"
+                                        DisplayMemberBinding="{Binding Path}" />
+                    </GridView>
+                </ListView.View>
+            </ListView>
+            </Grid>
+
+            <GridSplitter Grid.Column="1" Width="4" HorizontalAlignment="Stretch"
+                          VerticalAlignment="Stretch" Background="LightGray" />
+
+            <TabControl Grid.Column="2">
+                <TabItem Header="Summary">
+                    <RichTextBox x:Name="SummaryViewer" IsReadOnly="True"
+                                 VerticalScrollBarVisibility="Auto"
+                                 HorizontalScrollBarVisibility="Auto"
+                                 FontFamily="Consolas">
+                        <RichTextBox.ContextMenu>
+                            <ContextMenu>
+                                <MenuItem Command="ApplicationCommands.Copy" />
+                                <MenuItem Command="ApplicationCommands.SelectAll" />
+                                <Separator />
+                                <MenuItem Header="Word wrap" IsCheckable="True"
+                                          Click="WordWrap_Toggled" />
+                            </ContextMenu>
+                        </RichTextBox.ContextMenu>
+                    </RichTextBox>
+                </TabItem>
+                <TabItem Header="Request">
+                    <Grid x:Name="RequestViewerGrid" SizeChanged="RequestViewerGrid_SizeChanged">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition x:Name="RequestHeadersRow" Height="Auto" />
+                            <RowDefinition x:Name="RequestSplitterRow" Height="4" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition x:Name="RequestPayloadRow" Height="*" />
+                        </Grid.RowDefinitions>
+                        <TextBlock Grid.Row="0" Text="Headers" FontWeight="Bold" Margin="4,4,4,2" />
+                        <TextBox Grid.Row="1" x:Name="RequestHeadersText" IsReadOnly="True"
+                                 FontFamily="Consolas" TextWrapping="NoWrap" AcceptsReturn="True"
+                                 VerticalScrollBarVisibility="Auto"
+                                 HorizontalScrollBarVisibility="Auto">
+                            <TextBox.ContextMenu>
+                                <ContextMenu>
+                                    <MenuItem Command="ApplicationCommands.Copy" />
+                                    <MenuItem Command="ApplicationCommands.SelectAll" />
+                                    <Separator />
+                                    <MenuItem Header="Word wrap" IsCheckable="True"
+                                              Click="WordWrap_Toggled" />
+                                </ContextMenu>
+                            </TextBox.ContextMenu>
+                        </TextBox>
+                        <GridSplitter x:Name="RequestPayloadSplitter" Grid.Row="2" Height="4"
+                                      HorizontalAlignment="Stretch" VerticalAlignment="Center"
+                                      Background="LightGray" />
+                        <StackPanel Grid.Row="3" x:Name="RequestPayloadFormatPanel"
+                                    Orientation="Horizontal" Margin="4,4,4,2">
+                            <TextBlock Text="Payload format:" VerticalAlignment="Center"
+                                       Margin="0,0,6,0" />
+                            <ComboBox x:Name="RequestPayloadFormatCombo" Width="120"
+                                      SelectionChanged="RequestPayloadFormat_Changed">
+                                <ComboBoxItem Content="Plain text" />
+                                <ComboBoxItem Content="JSON" />
+                                <ComboBoxItem Content="XML" />
+                                <ComboBoxItem Content="HTML" />
+                                <ComboBoxItem Content="JavaScript" />
+                                <ComboBoxItem Content="Image" />
+                                <ComboBoxItem Content="SVG" />
+                            </ComboBox>
+                        </StackPanel>
+                        <Grid Grid.Row="4">
+                            <avalonedit:TextEditor x:Name="RequestPayloadEditor"
+                                                   IsReadOnly="True" ShowLineNumbers="True"
+                                                   FontFamily="Consolas"
+                                                   VerticalScrollBarVisibility="Auto"
+                                                   HorizontalScrollBarVisibility="Auto">
+                                <avalonedit:TextEditor.ContextMenu>
+                                    <ContextMenu>
+                                        <MenuItem Command="ApplicationCommands.Copy" />
+                                        <MenuItem Command="ApplicationCommands.SelectAll" />
+                                        <Separator />
+                                        <MenuItem Header="Word wrap" IsCheckable="True"
+                                                  Click="WordWrap_Toggled" />
+                                    </ContextMenu>
+                                </avalonedit:TextEditor.ContextMenu>
+                            </avalonedit:TextEditor>
+                            <ScrollViewer x:Name="RequestPayloadImageScroll"
+                                          HorizontalScrollBarVisibility="Auto"
+                                          VerticalScrollBarVisibility="Auto"
+                                          Background="White" Visibility="Collapsed">
+                                <Image x:Name="RequestPayloadImage" Stretch="None"
+                                       HorizontalAlignment="Left" VerticalAlignment="Top" />
+                            </ScrollViewer>
+                            <ScrollViewer x:Name="RequestPayloadSvgScroll"
+                                          HorizontalScrollBarVisibility="Auto"
+                                          VerticalScrollBarVisibility="Auto"
+                                          Background="White" Visibility="Collapsed">
+                                <svgc:SvgViewbox x:Name="RequestPayloadSvg"
+                                                 HorizontalAlignment="Left"
+                                                 VerticalAlignment="Top" />
+                            </ScrollViewer>
+                            <TextBlock x:Name="RequestNoPayloadText" Text="(no payload)"
+                                       FontStyle="Italic" Foreground="Gray" Padding="6"
+                                       VerticalAlignment="Top" HorizontalAlignment="Left"
+                                       Visibility="Collapsed" />
+                        </Grid>
+                    </Grid>
+                </TabItem>
+                <TabItem Header="Response">
+                    <Grid x:Name="ResponseViewerGrid" SizeChanged="ResponseViewerGrid_SizeChanged">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition x:Name="ResponseHeadersRow" Height="Auto" />
+                            <RowDefinition x:Name="ResponseSplitterRow" Height="4" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition x:Name="ResponsePayloadRow" Height="*" />
+                        </Grid.RowDefinitions>
+                        <TextBlock Grid.Row="0" Text="Headers" FontWeight="Bold" Margin="4,4,4,2" />
+                        <TextBox Grid.Row="1" x:Name="ResponseHeadersText" IsReadOnly="True"
+                                 FontFamily="Consolas" TextWrapping="NoWrap" AcceptsReturn="True"
+                                 VerticalScrollBarVisibility="Auto"
+                                 HorizontalScrollBarVisibility="Auto">
+                            <TextBox.ContextMenu>
+                                <ContextMenu>
+                                    <MenuItem Command="ApplicationCommands.Copy" />
+                                    <MenuItem Command="ApplicationCommands.SelectAll" />
+                                    <Separator />
+                                    <MenuItem Header="Word wrap" IsCheckable="True"
+                                              Click="WordWrap_Toggled" />
+                                </ContextMenu>
+                            </TextBox.ContextMenu>
+                        </TextBox>
+                        <GridSplitter x:Name="ResponsePayloadSplitter" Grid.Row="2" Height="4"
+                                      HorizontalAlignment="Stretch" VerticalAlignment="Center"
+                                      Background="LightGray" />
+                        <StackPanel Grid.Row="3" x:Name="ResponsePayloadFormatPanel"
+                                    Orientation="Horizontal" Margin="4,4,4,2">
+                            <TextBlock Text="Payload format:" VerticalAlignment="Center"
+                                       Margin="0,0,6,0" />
+                            <ComboBox x:Name="ResponsePayloadFormatCombo" Width="120"
+                                      SelectionChanged="ResponsePayloadFormat_Changed">
+                                <ComboBoxItem Content="Plain text" />
+                                <ComboBoxItem Content="JSON" />
+                                <ComboBoxItem Content="XML" />
+                                <ComboBoxItem Content="HTML" />
+                                <ComboBoxItem Content="JavaScript" />
+                                <ComboBoxItem Content="Image" />
+                                <ComboBoxItem Content="SVG" />
+                            </ComboBox>
+                        </StackPanel>
+                        <Grid Grid.Row="4">
+                            <avalonedit:TextEditor x:Name="ResponsePayloadEditor"
+                                                   IsReadOnly="True" ShowLineNumbers="True"
+                                                   FontFamily="Consolas"
+                                                   VerticalScrollBarVisibility="Auto"
+                                                   HorizontalScrollBarVisibility="Auto">
+                                <avalonedit:TextEditor.ContextMenu>
+                                    <ContextMenu>
+                                        <MenuItem Command="ApplicationCommands.Copy" />
+                                        <MenuItem Command="ApplicationCommands.SelectAll" />
+                                        <Separator />
+                                        <MenuItem Header="Word wrap" IsCheckable="True"
+                                                  Click="WordWrap_Toggled" />
+                                    </ContextMenu>
+                                </avalonedit:TextEditor.ContextMenu>
+                            </avalonedit:TextEditor>
+                            <ScrollViewer x:Name="ResponsePayloadImageScroll"
+                                          HorizontalScrollBarVisibility="Auto"
+                                          VerticalScrollBarVisibility="Auto"
+                                          Background="White" Visibility="Collapsed">
+                                <Image x:Name="ResponsePayloadImage" Stretch="None"
+                                       HorizontalAlignment="Left" VerticalAlignment="Top" />
+                            </ScrollViewer>
+                            <ScrollViewer x:Name="ResponsePayloadSvgScroll"
+                                          HorizontalScrollBarVisibility="Auto"
+                                          VerticalScrollBarVisibility="Auto"
+                                          Background="White" Visibility="Collapsed">
+                                <svgc:SvgViewbox x:Name="ResponsePayloadSvg"
+                                                 HorizontalAlignment="Left"
+                                                 VerticalAlignment="Top" />
+                            </ScrollViewer>
+                            <TextBlock x:Name="ResponseNoPayloadText" Text="(no payload)"
+                                       FontStyle="Italic" Foreground="Gray" Padding="6"
+                                       VerticalAlignment="Top" HorizontalAlignment="Left"
+                                       Visibility="Collapsed" />
+                        </Grid>
+                    </Grid>
+                </TabItem>
+                <TabItem Header="MAPI">
+                    <RichTextBox x:Name="MapiViewer" IsReadOnly="True"
+                                 VerticalScrollBarVisibility="Auto"
+                                 HorizontalScrollBarVisibility="Auto"
+                                 FontFamily="Consolas">
+                        <RichTextBox.ContextMenu>
+                            <ContextMenu>
+                                <MenuItem Command="ApplicationCommands.Copy" />
+                                <MenuItem Command="ApplicationCommands.SelectAll" />
+                                <Separator />
+                                <MenuItem Header="Word wrap" IsCheckable="True"
+                                          Click="WordWrap_Toggled" />
+                            </ContextMenu>
+                        </RichTextBox.ContextMenu>
+                    </RichTextBox>
+                </TabItem>
+            </TabControl>
+        </Grid>
+    </DockPanel>
+</Window>
