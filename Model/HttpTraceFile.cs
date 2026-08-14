@@ -30,6 +30,7 @@ namespace HttpTraceAnalyser.Model
         public const string ResponseHeaders = nameof(ResponseHeaders);
         public const string RequestPayload = nameof(RequestPayload);
         public const string ResponsePayload = nameof(ResponsePayload);
+        public const string Latency = nameof(Latency);
         public const string RowBackground = nameof(RowBackground);
         public const string RowForeground = nameof(RowForeground);
     }
@@ -65,6 +66,14 @@ namespace HttpTraceAnalyser.Model
 
         public string FilePath { get; }
 
+        /// <summary>
+        /// Optional per-provider event count map, populated by loaders that see multiple
+        /// ETW/event providers (currently the ETL loader). Null for formats without a
+        /// provider concept. Used by the Summary viewer to describe what was found in
+        /// the trace even when no HTTP messages could be extracted.
+        /// </summary>
+        public IReadOnlyDictionary<string, int>? ProviderEventCounts { get; protected set; }
+
         /// <summary>The in-memory table backing this trace. One row per request/response pair.</summary>
         public DataTable Messages => _messages;
 
@@ -93,6 +102,7 @@ namespace HttpTraceAnalyser.Model
             cols.Add(TraceDataSchema.ResponseHeaders, typeof(string));
             cols.Add(TraceDataSchema.RequestPayload, typeof(byte[]));
             cols.Add(TraceDataSchema.ResponsePayload, typeof(byte[]));
+            cols.Add(TraceDataSchema.Latency, typeof(double));
             cols.Add(TraceDataSchema.RowBackground, typeof(Brush));
             cols.Add(TraceDataSchema.RowForeground, typeof(Brush));
             table.PrimaryKey = new[] { cols[TraceDataSchema.Index]! };
@@ -137,6 +147,13 @@ namespace HttpTraceAnalyser.Model
                 row[TraceDataSchema.ReasonPhrase] = response.ReasonPhrase ?? string.Empty;
                 row[TraceDataSchema.ResponseHeaders] = SerializeHeaders(response.Headers);
                 row[TraceDataSchema.ResponsePayload] = response.Payload ?? Array.Empty<byte>();
+
+                if (request.Timestamp is { } reqTsForLatency && response.Timestamp is { } respTsForLatency)
+                {
+                    var latency = (respTsForLatency - reqTsForLatency).TotalMilliseconds;
+                    if (latency >= 0)
+                        row[TraceDataSchema.Latency] = latency;
+                }
             }
             else
             {

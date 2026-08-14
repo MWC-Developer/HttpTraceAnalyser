@@ -228,7 +228,10 @@ namespace HttpTraceAnalyser.Model
             var rule = Match(item);
             if (rule is null)
                 return null;
-            return new SolidColorBrush(rule.BackgroundColor);
+            var brush = new SolidColorBrush(rule.BackgroundColor);
+            if (brush.CanFreeze)
+                brush.Freeze();
+            return brush;
         }
 
         public static Brush? GetForeground(object? item)
@@ -236,7 +239,10 @@ namespace HttpTraceAnalyser.Model
             var rule = Match(item);
             if (rule?.ForegroundColor is null)
                 return null;
-            return new SolidColorBrush(rule.ForegroundColor.Value);
+            var brush = new SolidColorBrush(rule.ForegroundColor.Value);
+            if (brush.CanFreeze)
+                brush.Freeze();
+            return brush;
         }
 
         private static object? GetColumnValue(object item, HighlightColumn column)

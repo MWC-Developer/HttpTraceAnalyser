@@ -28,15 +28,19 @@
             </ObjectDataProvider.MethodParameters>
         </ObjectDataProvider>
     </Window.Resources>
-    <DockPanel>
-        <ToolBarTray DockPanel.Dock="Top">
-            <ToolBar>
-                <Button x:Name="OpenFileButton" Content="Open file" Click="OpenFileButton_Click" />
-                <Separator />
-                <Button x:Name="HighlightsButton" Content="Highlights" Click="HighlightsButton_Click" />
-                <ToggleButton x:Name="FilterButton" Content="Filter" />
-            </ToolBar>
-        </ToolBarTray>
+    <Grid>
+        <DockPanel>
+            <ToolBarTray DockPanel.Dock="Top">
+                <ToolBar>
+                    <Button x:Name="OpenFileButton" Content="Open file" Click="OpenFileButton_Click" />
+                    <Separator />
+                    <Button x:Name="HighlightsButton" Content="Highlights" Click="HighlightsButton_Click" />
+                    <ToggleButton x:Name="FilterButton" Content="Filter" />
+                    <Separator />
+                    <Button x:Name="PreviousErrorButton" Content="Previous Error" Click="PreviousErrorButton_Click" />
+                    <Button x:Name="NextErrorButton" Content="Next Error" Click="NextErrorButton_Click" />
+                </ToolBar>
+            </ToolBarTray>
 
         <Grid>
             <Grid.ColumnDefinitions>
@@ -163,6 +167,9 @@
                                 <MenuItem Header="Path" IsCheckable="True" IsChecked="True"
                                           Tag="{x:Reference PathColumn}"
                                           Checked="ColumnVisibility_Changed" Unchecked="ColumnVisibility_Changed" />
+                                <MenuItem Header="Latency (ms)" IsCheckable="True" IsChecked="True"
+                                          Tag="{x:Reference LatencyColumn}"
+                                          Checked="ColumnVisibility_Changed" Unchecked="ColumnVisibility_Changed" />
                             </ContextMenu>
                         </GridView.ColumnHeaderContextMenu>
                         <GridViewColumn x:Name="DateColumn" Header="Date" Width="0"
@@ -173,6 +180,8 @@
                                         DisplayMemberBinding="{Binding Method}" />
                         <GridViewColumn x:Name="ResponseColumn" Header="Response" Width="55"
                                         DisplayMemberBinding="{Binding Response}" />
+                        <GridViewColumn x:Name="LatencyColumn" Header="Latency (ms)" Width="90"
+                                        DisplayMemberBinding="{Binding Latency, StringFormat=N0}" />
                         <GridViewColumn x:Name="UrlColumn" Header="URL" Width="0"
                                         DisplayMemberBinding="{Binding Url}" />
                         <GridViewColumn x:Name="HostColumn" Header="Host" Width="160"
@@ -383,4 +392,18 @@
             </TabControl>
         </Grid>
     </DockPanel>
+
+        <Grid x:Name="BusyOverlay" Background="#80000000" Visibility="Collapsed"
+              Panel.ZIndex="100">
+            <Border Background="White" CornerRadius="4" Padding="20"
+                    HorizontalAlignment="Center" VerticalAlignment="Center"
+                    BorderBrush="Gray" BorderThickness="1">
+                <StackPanel MinWidth="240">
+                    <TextBlock x:Name="BusyText" Text="Loading trace..." FontWeight="Bold"
+                               HorizontalAlignment="Center" Margin="0,0,0,8" />
+                    <ProgressBar IsIndeterminate="True" Height="16" />
+                </StackPanel>
+            </Border>
+        </Grid>
+    </Grid>
 </Window>

@@ -26,14 +26,32 @@ namespace HttpTraceAnalyser.Model
             "Microsoft-Windows-WinINet",
             "Microsoft-Windows-WinINet-Capture",
             "Microsoft-Windows-HttpService",
+            "Microsoft-Windows-AAD",
+            "Microsoft.Windows.Security.TokenBroker",
+        };
+
+        // Providers that log token/auth operations rather than raw HTTP. Rows extracted
+        // from these get a default method of "TOKEN" when the payload has no HTTP verb
+        // (which is normally the case), plus richer synthesised header fields.
+        private static readonly HashSet<string> AuthProviders = new(StringComparer.OrdinalIgnoreCase)
+        {
+            "Microsoft-Windows-AAD",
+            "Microsoft.Windows.Security.TokenBroker",
         };
 
         // Payload field names we probe for, in preference order.
         private static readonly string[] MethodFieldNames = { "Verb", "Method", "HttpVerb" };
-        private static readonly string[] UrlFieldNames = { "Url", "URL", "Uri", "URI", "Object", "FullUrl" };
+        private static readonly string[] UrlFieldNames = { "Url", "URL", "Uri", "URI", "Object", "FullUrl", "TargetUrl", "Endpoint", "Authority", "Resource", "ResourceUri", "ResourceUrl" };
         private static readonly string[] StatusFieldNames = { "StatusCode", "Status", "HttpStatusCode" };
         private static readonly string[] HeaderFieldNames = { "HeaderText", "Headers", "RequestHeaders", "ResponseHeaders" };
         private static readonly string[] HostFieldNames = { "ServerName", "Host", "HostName" };
+
+        // Auth-provider probes: not real HTTP fields, but surfaced as pseudo-headers so
+        // they render in the Request/Response headers view for troubleshooting.
+        private static readonly string[] CorrelationFieldNames = { "CorrelationId", "ClientRequestId", "client-request-id", "XMsRequestId", "x-ms-request-id", "ActivityId", "RequestId" };
+        private static readonly string[] ErrorCodeFieldNames = { "ErrorCode", "OAuthErrorCode", "HResult", "HRESULT", "NtStatus", "Result" };
+        private static readonly string[] ErrorDescriptionFieldNames = { "ErrorDescription", "ErrorMessage", "Message", "ErrorText" };
+        private static readonly string[] IdentityFieldNames = { "UserId", "AccountId", "Upn", "UserPrincipalName", "ClientId", "AppId", "ProviderId", "Scope", "Scopes" };
 
         public EtlTraceFile(string filePath) : base(filePath)
         {
@@ -45,10 +63,15 @@ namespace HttpTraceAnalyser.Model
             using var source = new ETWTraceEventSource(filePath);
             var pending = new Dictionary<Guid, PendingRequest>();
             var completed = new List<PendingRequest>();
+            var providerCounts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
 
             source.Dynamic.All += data =>
             {
-                if (!HttpProviders.Contains(data.ProviderName))
+                var providerName = string.IsNullOrEmpty(data.ProviderName) ? "(unknown)" : data.ProviderName;
+                providerCounts.TryGetValue(providerName, out var seen);
+                providerCounts[providerName] = seen + 1;
+
+                if (!HttpProviders.Contains(providerName))
                     return;
 
                 var key = data.ActivityID;
@@ -61,6 +84,11 @@ namespace HttpTraceAnalyser.Model
                     pending[key] = pr;
                 }
                 pr.LastSeen = data.TimeStamp;
+                if (AuthProviders.Contains(providerName))
+                {
+                    pr.IsAuthEvent = true;
+                    pr.Provider ??= providerName;
+                }
 
                 ExtractInto(data, pr);
 
@@ -83,6 +111,8 @@ namespace HttpTraceAnalyser.Model
             };
 
             source.Process();
+
+            ProviderEventCounts = providerCounts;
 
             // Flush any correlations that never got a terminal event but have usable data.
             foreach (var pr in pending.Values)
@@ -163,6 +193,40 @@ namespace HttpTraceAnalyser.Model
                 }
                 break;
             }
+
+            // Auth-provider extras: surfaced as pseudo-headers so they appear in the
+            // Request headers view even though they aren't real HTTP headers.
+            if (pr.IsAuthEvent)
+            {
+                CaptureFirst(data, CorrelationFieldNames, pr.RequestExtras, "X-Correlation-Id");
+                CaptureFirst(data, IdentityFieldNames, pr.RequestExtras, "X-Identity");
+                CaptureFirst(data, ErrorCodeFieldNames, pr.ResponseExtras, "X-Error-Code");
+                CaptureFirst(data, ErrorDescriptionFieldNames, pr.ResponseExtras, "X-Error-Description");
+
+                if (pr.ResponseExtras.Count > 0 && pr.ResponseSeen == default)
+                    pr.ResponseSeen = data.TimeStamp;
+
+                var eventNameHere = data.EventName ?? string.Empty;
+                if (!pr.RequestExtras.ContainsKey("X-Event") && !string.IsNullOrEmpty(eventNameHere))
+                    pr.RequestExtras["X-Event"] = eventNameHere;
+                if (!pr.RequestExtras.ContainsKey("X-Provider") && !string.IsNullOrEmpty(pr.Provider))
+                    pr.RequestExtras["X-Provider"] = pr.Provider!;
+            }
+        }
+
+        private static void CaptureFirst(TraceEvent data, string[] fieldNames,
+            Dictionary<string, string> target, string headerName)
+        {
+            if (target.ContainsKey(headerName))
+                return;
+            foreach (var name in fieldNames)
+            {
+                var v = TryGetString(data, name);
+                if (string.IsNullOrEmpty(v) || v == "0")
+                    continue;
+                target[headerName] = v;
+                return;
+            }
         }
 
         private static string? TryGetString(TraceEvent data, string fieldName)
@@ -212,29 +276,41 @@ namespace HttpTraceAnalyser.Model
             public string? RequestHeaderText { get; set; }
             public string? ResponseHeaderText { get; set; }
 
+            // Auth-provider augmentation.
+            public bool IsAuthEvent { get; set; }
+            public string? Provider { get; set; }
+            public Dictionary<string, string> RequestExtras { get; } = new(StringComparer.OrdinalIgnoreCase);
+            public Dictionary<string, string> ResponseExtras { get; } = new(StringComparer.OrdinalIgnoreCase);
+
             public bool HasEnoughForRow()
-                => !string.IsNullOrEmpty(Url) || !string.IsNullOrEmpty(Method) || StatusCode is not null;
+                => !string.IsNullOrEmpty(Url) || !string.IsNullOrEmpty(Method) ||
+                   StatusCode is not null ||
+                   (IsAuthEvent && (RequestExtras.Count > 0 || ResponseExtras.Count > 0));
 
             public HttpRequest BuildRequest()
             {
-                var method = Method ?? string.Empty;
+                var method = Method ?? (IsAuthEvent ? "TOKEN" : string.Empty);
                 var urlText = Url ?? (Host is not null ? "http://" + Host + "/" : "about:blank");
                 var uri = Uri.TryCreate(urlText, UriKind.Absolute, out var abs)
                     ? abs
                     : new Uri(urlText, UriKind.RelativeOrAbsolute);
 
-                var headers = ParseHttpHeaders(RequestHeaderText, out _, out _, out _);
+                var headers = MergeHeaders(
+                    ParseHttpHeaders(RequestHeaderText, out _, out _, out _),
+                    RequestExtras);
                 return new HttpRequest(FirstSeen, headers, Array.Empty<byte>(), method, uri);
             }
 
             public HttpResponse? BuildResponse()
             {
-                if (StatusCode is null && string.IsNullOrEmpty(ResponseHeaderText))
+                if (StatusCode is null && string.IsNullOrEmpty(ResponseHeaderText) && ResponseExtras.Count == 0)
                     return null;
 
                 int? status = StatusCode;
                 string? reason = null;
-                var headers = ParseHttpHeaders(ResponseHeaderText, out var parsedStatus, out var parsedReason, out _);
+                var headers = MergeHeaders(
+                    ParseHttpHeaders(ResponseHeaderText, out var parsedStatus, out var parsedReason, out _),
+                    ResponseExtras);
                 if (status is null && parsedStatus is not null)
                 {
                     status = parsedStatus;
@@ -243,6 +319,19 @@ namespace HttpTraceAnalyser.Model
 
                 var timestamp = ResponseSeen != default ? ResponseSeen : LastSeen;
                 return new HttpResponse(timestamp, headers, Array.Empty<byte>(), status, reason);
+            }
+
+            private static IReadOnlyList<KeyValuePair<string, string>> MergeHeaders(
+                IReadOnlyList<KeyValuePair<string, string>> parsed,
+                Dictionary<string, string> extras)
+            {
+                if (extras.Count == 0)
+                    return parsed;
+                var list = new List<KeyValuePair<string, string>>(parsed.Count + extras.Count);
+                list.AddRange(parsed);
+                foreach (var kvp in extras)
+                    list.Add(new KeyValuePair<string, string>(kvp.Key, kvp.Value));
+                return list;
             }
         }
 

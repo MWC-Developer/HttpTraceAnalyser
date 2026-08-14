@@ -5,6 +5,7 @@ using System.Data;
 using System.IO;
 using System.Text;
 using System.Text.Json;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
@@ -41,6 +42,11 @@ namespace HttpTraceAnalyser
         private bool _summaryWrap;
         private bool _mapiWrap;
         private const double NoWrapPageWidth = 5000d;
+
+        // Cached loader-level summary (e.g. ETL provider event counts). Shown in the
+        // Summary viewer whenever no row is selected, so it stays visible even when
+        // the loader extracted no HTTP messages.
+        private FlowDocument? _loaderSummary;
 
         // Column-sort state. Cycle per column: none -> ascending -> descending -> none.
         private GridViewColumn? _sortColumn;
@@ -117,6 +123,39 @@ namespace HttpTraceAnalyser
         {
             var window = new HighlightsWindow { Owner = this };
             window.ShowDialog();
+        }
+
+        private void NextErrorButton_Click(object sender, RoutedEventArgs e)
+            => NavigateToError(forward: true);
+
+        private void PreviousErrorButton_Click(object sender, RoutedEventArgs e)
+            => NavigateToError(forward: false);
+
+        private void NavigateToError(bool forward)
+        {
+            var count = RequestList.Items.Count;
+            if (count == 0)
+                return;
+
+            int start = RequestList.SelectedIndex;
+            int step = forward ? 1 : -1;
+            int startProbe = start < 0
+                ? (forward ? 0 : count - 1)
+                : ((start + step) % count + count) % count;
+
+            for (int i = 0; i < count; i++)
+            {
+                int idx = ((startProbe + step * i) % count + count) % count;
+                if (RequestList.Items[idx] is DataRowView drv
+                    && drv.Row[TraceDataSchema.Response] is int code
+                    && code >= 400 && code < 600)
+                {
+                    RequestList.SelectedItems.Clear();
+                    RequestList.SelectedIndex = idx;
+                    RequestList.ScrollIntoView(RequestList.Items[idx]);
+                    return;
+                }
+            }
         }
 
         private void RequestList_HeaderClick(object sender, RoutedEventArgs e)
@@ -240,7 +279,7 @@ namespace HttpTraceAnalyser
             }
         }
 
-        private void OpenFileButton_Click(object sender, RoutedEventArgs e)
+        private async void OpenFileButton_Click(object sender, RoutedEventArgs e)
         {
             var dialog = new Microsoft.Win32.OpenFileDialog
             {
@@ -255,22 +294,83 @@ namespace HttpTraceAnalyser
             if (dialog.ShowDialog() != true)
                 return;
 
+            var path = dialog.FileName;
+
+            _loaderSummary = null;
+            SetBusy(true, $"Loading {Path.GetFileName(path)}...");
+            HttpTraceFile? loaded = null;
+            Exception? error = null;
             try
             {
-                _trace = HttpTraceFile.Load(dialog.FileName);
+                loaded = await Task.Run(() => HttpTraceFile.Load(path)).ConfigureAwait(true);
             }
             catch (Exception ex)
             {
+                error = ex;
+            }
+            finally
+            {
+                SetBusy(false);
+            }
+
+            if (error is not null)
+            {
                 _trace = null;
-                MessageBox.Show(this, $"Failed to open trace file:\n{ex.Message}",
+                MessageBox.Show(this, $"Failed to open trace file:\n{error.Message}",
                     "Open file", MessageBoxButton.OK, MessageBoxImage.Error);
             }
+            else
+            {
+                _trace = loaded;
+            }
+
+            if (_trace is not null)
+                _loaderSummary = BuildLoaderSummary(_trace);
 
             PopulateList();
             ClearViewers();
             Title = _trace is null
                 ? "HTTP Trace Analyser"
-                : $"HTTP Trace Analyser - {Path.GetFileName(dialog.FileName)}";
+                : $"HTTP Trace Analyser - {Path.GetFileName(path)}";
+        }
+
+        private void SetBusy(bool busy, string? message = null)
+        {
+            if (busy)
+            {
+                if (!string.IsNullOrEmpty(message))
+                    BusyText.Text = message;
+                BusyOverlay.Visibility = Visibility.Visible;
+            }
+            else
+            {
+                BusyOverlay.Visibility = Visibility.Collapsed;
+            }
+            OpenFileButton.IsEnabled = !busy;
+        }
+
+        private static FlowDocument? BuildLoaderSummary(HttpTraceFile trace)
+        {
+            var counts = trace.ProviderEventCounts;
+            if (counts is null || counts.Count == 0)
+                return null;
+
+            var doc = NewDocument();
+            AddSectionHeader(doc, "Trace summary");
+            AddLine(doc, "File", Path.GetFileName(trace.FilePath));
+            AddLine(doc, "Rows extracted", trace.Count.ToString());
+            AddLine(doc, "Distinct providers", counts.Count.ToString());
+
+            long total = 0;
+            foreach (var v in counts.Values)
+                total += v;
+            AddLine(doc, "Total events", total.ToString("N0"));
+
+            AddSectionHeader(doc, "Provider event counts");
+            foreach (var kvp in counts.OrderByDescending(k => k.Value))
+                AddLine(doc, kvp.Key, kvp.Value.ToString("N0"));
+
+            return doc;
         }
 
         private void PopulateList()
@@ -282,7 +382,7 @@ namespace HttpTraceAnalyser
 
         private void ClearViewers()
         {
-            SummaryViewer.Document = new FlowDocument();
+            SummaryViewer.Document = _loaderSummary ?? new FlowDocument();
             ApplyRichTextBoxWrap(SummaryViewer, _summaryWrap);
             MapiViewer.Document = new FlowDocument();
             ApplyRichTextBoxWrap(MapiViewer, _mapiWrap);
