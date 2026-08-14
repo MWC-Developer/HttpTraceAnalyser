@@ -62,11 +62,30 @@ namespace HttpTraceAnalyser
             HighlightRuleSet.RulesChanged += OnHighlightRulesChanged;
             FilterRuleSet.FiltersChanged += OnFilterRulesChanged;
             ActiveFiltersList.ItemsSource = FilterRuleSet.Rules;
+            DarkModeToggle.IsChecked = ThemeManager.Current == AppTheme.Dark;
+            ThemeManager.ThemeChanged += OnThemeChanged;
             Closed += (_, _) =>
             {
                 HighlightRuleSet.RulesChanged -= OnHighlightRulesChanged;
                 FilterRuleSet.FiltersChanged -= OnFilterRulesChanged;
+                ThemeManager.ThemeChanged -= OnThemeChanged;
             };
+        }
+
+        private void DarkModeToggle_Changed(object sender, RoutedEventArgs e)
+        {
+            var target = DarkModeToggle.IsChecked == true ? AppTheme.Dark : AppTheme.Light;
+            if (ThemeManager.Current != target)
+                ThemeManager.Apply(target);
+        }
+
+        private void OnThemeChanged(object? sender, EventArgs e)
+        {
+            DarkModeToggle.IsChecked = ThemeManager.Current == AppTheme.Dark;
+            // Row foreground uses a value converter that resolves the theme's
+            // default brush when the row has no explicit colour, so re-run the
+            // bindings to pick up the new palette.
+            RequestList.Items.Refresh();
         }
 
         private void OnFilterRulesChanged(object? sender, EventArgs e)

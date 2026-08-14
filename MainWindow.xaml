@@ -30,17 +30,47 @@
     </Window.Resources>
     <Grid>
         <DockPanel>
-            <ToolBarTray DockPanel.Dock="Top">
-                <ToolBar>
-                    <Button x:Name="OpenFileButton" Content="Open file" Click="OpenFileButton_Click" />
-                    <Separator />
-                    <Button x:Name="HighlightsButton" Content="Highlights" Click="HighlightsButton_Click" />
-                    <ToggleButton x:Name="FilterButton" Content="Filter" />
-                    <Separator />
-                    <Button x:Name="PreviousErrorButton" Content="Previous Error" Click="PreviousErrorButton_Click" />
-                    <Button x:Name="NextErrorButton" Content="Next Error" Click="NextErrorButton_Click" />
-                </ToolBar>
-            </ToolBarTray>
+            <Border DockPanel.Dock="Top"
+                    Background="{DynamicResource HeaderBackgroundBrush}"
+                    BorderBrush="{DynamicResource ControlBorderBrush}"
+                    BorderThickness="0,0,0,1">
+                <DockPanel LastChildFill="True">
+                    <ToggleButton x:Name="DarkModeToggle" DockPanel.Dock="Right"
+                                  Content="Dark mode" Margin="4,3" Padding="10,3"
+                                  VerticalAlignment="Center"
+                                  Foreground="Black"
+                                  Checked="DarkModeToggle_Changed"
+                                  Unchecked="DarkModeToggle_Changed" />
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                        <StackPanel.Resources>
+                            <Style TargetType="Button">
+                                <Setter Property="Margin" Value="2,3" />
+                                <Setter Property="Padding" Value="10,3" />
+                                <Setter Property="MinWidth" Value="60" />
+                                <Setter Property="Foreground" Value="Black" />
+                            </Style>
+                            <Style TargetType="ToggleButton">
+                                <Setter Property="Margin" Value="2,3" />
+                                <Setter Property="Padding" Value="10,3" />
+                                <Setter Property="MinWidth" Value="60" />
+                                <Setter Property="Foreground" Value="Black" />
+                            </Style>
+                            <Style TargetType="Separator">
+                                <Setter Property="Margin" Value="4,4" />
+                                <Setter Property="Background"
+                                        Value="{DynamicResource ControlBorderBrush}" />
+                            </Style>
+                        </StackPanel.Resources>
+                        <Button x:Name="OpenFileButton" Content="Open file" Click="OpenFileButton_Click" />
+                        <Separator />
+                        <Button x:Name="HighlightsButton" Content="Highlights" Click="HighlightsButton_Click" />
+                        <ToggleButton x:Name="FilterButton" Content="Filter" />
+                        <Separator />
+                        <Button x:Name="PreviousErrorButton" Content="Previous Error" Click="PreviousErrorButton_Click" />
+                        <Button x:Name="NextErrorButton" Content="Next Error" Click="NextErrorButton_Click" />
+                    </StackPanel>
+                </DockPanel>
+            </Border>
 
         <Grid>
             <Grid.ColumnDefinitions>
@@ -131,10 +161,14 @@
                                 Value="{Binding RowBackground,
                                                 TargetNullValue={x:Null},
                                                 FallbackValue={x:Null}}" />
-                        <Setter Property="Foreground"
-                                Value="{Binding RowForeground,
-                                                TargetNullValue={x:Static SystemColors.ControlTextBrush},
-                                                FallbackValue={x:Static SystemColors.ControlTextBrush}}" />
+                        <Setter Property="Foreground">
+                            <Setter.Value>
+                                <MultiBinding Converter="{x:Static local:RowForegroundMultiConverter.Instance}">
+                                    <Binding Path="RowForeground" />
+                                    <Binding Path="RowBackground" />
+                                </MultiBinding>
+                            </Setter.Value>
+                        </Setter>
                     </Style>
                 </ListView.ItemContainerStyle>
                 <ListView.ContextMenu>
@@ -194,7 +228,8 @@
             </Grid>
 
             <GridSplitter Grid.Column="1" Width="4" HorizontalAlignment="Stretch"
-                          VerticalAlignment="Stretch" Background="LightGray" />
+                          VerticalAlignment="Stretch"
+                          Background="{DynamicResource SplitterBackgroundBrush}" />
 
             <TabControl Grid.Column="2">
                 <TabItem Header="Summary">
@@ -239,7 +274,7 @@
                         </TextBox>
                         <GridSplitter x:Name="RequestPayloadSplitter" Grid.Row="2" Height="4"
                                       HorizontalAlignment="Stretch" VerticalAlignment="Center"
-                                      Background="LightGray" />
+                                      Background="{DynamicResource SplitterBackgroundBrush}" />
                         <StackPanel Grid.Row="3" x:Name="RequestPayloadFormatPanel"
                                     Orientation="Horizontal" Margin="4,4,4,2">
                             <TextBlock Text="Payload format:" VerticalAlignment="Center"
@@ -274,20 +309,23 @@
                             <ScrollViewer x:Name="RequestPayloadImageScroll"
                                           HorizontalScrollBarVisibility="Auto"
                                           VerticalScrollBarVisibility="Auto"
-                                          Background="White" Visibility="Collapsed">
+                                          Background="{DynamicResource ImageBackgroundBrush}"
+                                          Visibility="Collapsed">
                                 <Image x:Name="RequestPayloadImage" Stretch="None"
                                        HorizontalAlignment="Left" VerticalAlignment="Top" />
                             </ScrollViewer>
                             <ScrollViewer x:Name="RequestPayloadSvgScroll"
                                           HorizontalScrollBarVisibility="Auto"
                                           VerticalScrollBarVisibility="Auto"
-                                          Background="White" Visibility="Collapsed">
+                                          Background="{DynamicResource ImageBackgroundBrush}"
+                                          Visibility="Collapsed">
                                 <svgc:SvgViewbox x:Name="RequestPayloadSvg"
                                                  HorizontalAlignment="Left"
                                                  VerticalAlignment="Top" />
                             </ScrollViewer>
                             <TextBlock x:Name="RequestNoPayloadText" Text="(no payload)"
-                                       FontStyle="Italic" Foreground="Gray" Padding="6"
+                                       FontStyle="Italic"
+                                       Foreground="{DynamicResource SubtleForegroundBrush}" Padding="6"
                                        VerticalAlignment="Top" HorizontalAlignment="Left"
                                        Visibility="Collapsed" />
                         </Grid>
@@ -319,7 +357,7 @@
                         </TextBox>
                         <GridSplitter x:Name="ResponsePayloadSplitter" Grid.Row="2" Height="4"
                                       HorizontalAlignment="Stretch" VerticalAlignment="Center"
-                                      Background="LightGray" />
+                                      Background="{DynamicResource SplitterBackgroundBrush}" />
                         <StackPanel Grid.Row="3" x:Name="ResponsePayloadFormatPanel"
                                     Orientation="Horizontal" Margin="4,4,4,2">
                             <TextBlock Text="Payload format:" VerticalAlignment="Center"
@@ -354,20 +392,23 @@
                             <ScrollViewer x:Name="ResponsePayloadImageScroll"
                                           HorizontalScrollBarVisibility="Auto"
                                           VerticalScrollBarVisibility="Auto"
-                                          Background="White" Visibility="Collapsed">
+                                          Background="{DynamicResource ImageBackgroundBrush}"
+                                          Visibility="Collapsed">
                                 <Image x:Name="ResponsePayloadImage" Stretch="None"
                                        HorizontalAlignment="Left" VerticalAlignment="Top" />
                             </ScrollViewer>
                             <ScrollViewer x:Name="ResponsePayloadSvgScroll"
                                           HorizontalScrollBarVisibility="Auto"
                                           VerticalScrollBarVisibility="Auto"
-                                          Background="White" Visibility="Collapsed">
+                                          Background="{DynamicResource ImageBackgroundBrush}"
+                                          Visibility="Collapsed">
                                 <svgc:SvgViewbox x:Name="ResponsePayloadSvg"
                                                  HorizontalAlignment="Left"
                                                  VerticalAlignment="Top" />
                             </ScrollViewer>
                             <TextBlock x:Name="ResponseNoPayloadText" Text="(no payload)"
-                                       FontStyle="Italic" Foreground="Gray" Padding="6"
+                                       FontStyle="Italic"
+                                       Foreground="{DynamicResource SubtleForegroundBrush}" Padding="6"
                                        VerticalAlignment="Top" HorizontalAlignment="Left"
                                        Visibility="Collapsed" />
                         </Grid>
@@ -393,11 +434,12 @@
         </Grid>
     </DockPanel>
 
-        <Grid x:Name="BusyOverlay" Background="#80000000" Visibility="Collapsed"
-              Panel.ZIndex="100">
-            <Border Background="White" CornerRadius="4" Padding="20"
+        <Grid x:Name="BusyOverlay" Background="{DynamicResource OverlayBackgroundBrush}"
+              Visibility="Collapsed" Panel.ZIndex="100">
+            <Border Background="{DynamicResource OverlayCardBackgroundBrush}"
+                    CornerRadius="4" Padding="20"
                     HorizontalAlignment="Center" VerticalAlignment="Center"
-                    BorderBrush="Gray" BorderThickness="1">
+                    BorderBrush="{DynamicResource OverlayCardBorderBrush}" BorderThickness="1">
                 <StackPanel MinWidth="240">
                     <TextBlock x:Name="BusyText" Text="Loading trace..." FontWeight="Bold"
                                HorizontalAlignment="Center" Margin="0,0,0,8" />
