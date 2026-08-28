@@ -835,6 +835,7 @@ namespace HttpTraceAnalyser
 
             bool hasPayload = _requestPayload is { Length: > 0 };
             ApplyRequestPayloadLayout(hasPayload);
+            RequestContentTypeText.Text = GetContentType(request.Headers);
 
             if (hasPayload)
             {
@@ -872,6 +873,7 @@ namespace HttpTraceAnalyser
                 _responsePayload = null;
                 ResponseHeadersText.Text = "(no response captured)";
                 ApplyResponsePayloadLayout(hasPayload: false);
+                ResponseContentTypeText.Text = string.Empty;
                 _responsePayloadNeedsRender = false;
                 return;
             }
@@ -888,6 +890,7 @@ namespace HttpTraceAnalyser
 
             bool hasPayload = _responsePayload is { Length: > 0 };
             ApplyResponsePayloadLayout(hasPayload);
+            ResponseContentTypeText.Text = GetContentType(response.Headers);
 
             if (hasPayload)
             {
@@ -1350,6 +1353,19 @@ namespace HttpTraceAnalyser
                 svgControl.StreamSource = null;
                 return false;
             }
+        }
+
+        private static string GetContentType(IReadOnlyList<KeyValuePair<string, string>>? headers)
+        {
+            if (headers is null)
+                return string.Empty;
+            foreach (var h in headers)
+            {
+                if (!string.Equals(h.Key, "Content-Type", StringComparison.OrdinalIgnoreCase))
+                    continue;
+                return h.Value ?? string.Empty;
+            }
+            return string.Empty;
         }
 
         private static PayloadFormat DetectPayloadFormat(IReadOnlyList<KeyValuePair<string, string>>? headers)

@@ -10,7 +10,7 @@
         xmlns:svgc="http://sharpvectors.codeplex.com/svgc/"
         mc:Ignorable="d"
         Title="HTTP Trace Analyser" Height="800" Width="1600"
-        WindowState="Maximized"
+        WindowState="Normal"
         Background="{DynamicResource ApplicationBackgroundBrush}"
         Foreground="{DynamicResource TextFillColorPrimaryBrush}">
     <Window.Resources>
@@ -424,7 +424,7 @@
                                       Background="{DynamicResource ControlFillColorDefaultBrush}" />
                         <StackPanel Grid.Row="3" x:Name="RequestPayloadFormatPanel"
                                     Orientation="Horizontal" Margin="4,4,4,2">
-                            <TextBlock Text="Payload format:" VerticalAlignment="Center"
+                            <TextBlock Text="Viewer format:" VerticalAlignment="Center"
                                        Margin="0,0,6,0" />
                             <ComboBox x:Name="RequestPayloadFormatCombo" Width="120"
                                       SelectionChanged="RequestPayloadFormat_Changed">
@@ -436,6 +436,9 @@
                                 <ComboBoxItem Content="Image" />
                                 <ComboBoxItem Content="SVG" />
                             </ComboBox>
+                            <TextBlock x:Name="RequestContentTypeText" VerticalAlignment="Center"
+                                       Margin="12,0,0,0"
+                                       Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
                         </StackPanel>
                         <Grid Grid.Row="4">
                             <avalonedit:TextEditor x:Name="RequestPayloadEditor"
@@ -507,7 +510,7 @@
                                       Background="{DynamicResource ControlFillColorDefaultBrush}" />
                         <StackPanel Grid.Row="3" x:Name="ResponsePayloadFormatPanel"
                                     Orientation="Horizontal" Margin="4,4,4,2">
-                            <TextBlock Text="Payload format:" VerticalAlignment="Center"
+                            <TextBlock Text="Viewer format:" VerticalAlignment="Center"
                                        Margin="0,0,6,0" />
                             <ComboBox x:Name="ResponsePayloadFormatCombo" Width="120"
                                       SelectionChanged="ResponsePayloadFormat_Changed">
@@ -519,6 +522,9 @@
                                 <ComboBoxItem Content="Image" />
                                 <ComboBoxItem Content="SVG" />
                             </ComboBox>
+                            <TextBlock x:Name="ResponseContentTypeText" VerticalAlignment="Center"
+                                       Margin="12,0,0,0"
+                                       Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
                         </StackPanel>
                         <Grid Grid.Row="4">
                             <avalonedit:TextEditor x:Name="ResponsePayloadEditor"
@@ -583,12 +589,16 @@
 
         <Grid x:Name="BusyOverlay" Background="#80000000"
               Visibility="Collapsed" Panel.ZIndex="100">
-            <Border Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
+            <Border Background="{DynamicResource LayerFillColorDefaultBrush}"
                     CornerRadius="4" Padding="20"
                     HorizontalAlignment="Center" VerticalAlignment="Center"
-                    BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1">
+                    BorderBrush="{DynamicResource DividerStrokeColorDefaultBrush}" BorderThickness="1">
+                <Border.Effect>
+                    <DropShadowEffect BlurRadius="16" ShadowDepth="2" Opacity="0.4" />
+                </Border.Effect>
                 <StackPanel MinWidth="240">
                     <TextBlock x:Name="BusyText" Text="Loading trace..." FontWeight="Bold"
+                               Foreground="{DynamicResource TextFillColorPrimaryBrush}"
                                HorizontalAlignment="Center" Margin="0,0,0,8" />
                     <ProgressBar IsIndeterminate="True" Height="16" />
                 </StackPanel>
