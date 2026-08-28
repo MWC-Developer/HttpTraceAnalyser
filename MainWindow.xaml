@@ -11,8 +11,8 @@
         mc:Ignorable="d"
         Title="HTTP Trace Analyser" Height="800" Width="1600"
         WindowState="Maximized"
-        Background="{DynamicResource WindowBackgroundBrush}"
-        Foreground="{DynamicResource WindowForegroundBrush}">
+        Background="{DynamicResource ApplicationBackgroundBrush}"
+        Foreground="{DynamicResource TextFillColorPrimaryBrush}">
     <Window.Resources>
         <BooleanToVisibilityConverter x:Key="BoolToVis" />
         <ObjectDataProvider x:Key="FilterFieldValues" MethodName="GetValues" ObjectType="{x:Type sys:Enum}">
@@ -39,7 +39,7 @@
             <Setter Property="Background" Value="Transparent" />
             <Setter Property="BorderBrush" Value="Transparent" />
             <Setter Property="BorderThickness" Value="1" />
-            <Setter Property="Foreground" Value="{DynamicResource HeaderForegroundBrush}" />
+            <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}" />
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="{x:Type ButtonBase}">
@@ -64,10 +64,10 @@
                                 <Setter TargetName="RibbonButtonIcon" Property="Visibility" Value="Collapsed" />
                             </Trigger>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="RibbonButtonBorder" Property="Background" Value="{DynamicResource ControlBorderBrush}" />
+                                <Setter TargetName="RibbonButtonBorder" Property="Background" Value="{DynamicResource ControlFillColorSecondaryBrush}" />
                             </Trigger>
                             <Trigger Property="IsPressed" Value="True">
-                                <Setter TargetName="RibbonButtonBorder" Property="Background" Value="{DynamicResource ControlBackgroundBrush}" />
+                                <Setter TargetName="RibbonButtonBorder" Property="Background" Value="{DynamicResource ControlFillColorTertiaryBrush}" />
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -76,7 +76,7 @@
         </Style>
 
         <Style x:Key="RibbonGroupStyle" TargetType="{x:Type Border}">
-            <Setter Property="BorderBrush" Value="{DynamicResource ControlBorderBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource DividerStrokeColorDefaultBrush}" />
             <Setter Property="BorderThickness" Value="0,0,1,0" />
             <Setter Property="Padding" Value="4,2" />
         </Style>
@@ -84,8 +84,8 @@
         <Style x:Key="RibbonToggleButtonStyle" TargetType="{x:Type ToggleButton}" BasedOn="{StaticResource RibbonButtonStyle}">
             <Style.Triggers>
                 <Trigger Property="IsChecked" Value="True">
-                    <Setter Property="Background" Value="{DynamicResource ControlBackgroundBrush}" />
-                    <Setter Property="BorderBrush" Value="{DynamicResource ControlBorderBrush}" />
+                    <Setter Property="Background" Value="{DynamicResource ControlFillColorSecondaryBrush}" />
+                    <Setter Property="BorderBrush" Value="{DynamicResource DividerStrokeColorDefaultBrush}" />
                 </Trigger>
             </Style.Triggers>
         </Style>
@@ -93,15 +93,15 @@
         <Style x:Key="RibbonGroupLabelStyle" TargetType="{x:Type TextBlock}">
             <Setter Property="HorizontalAlignment" Value="Center" />
             <Setter Property="FontSize" Value="10" />
-            <Setter Property="Foreground" Value="{DynamicResource HeaderForegroundBrush}" />
+            <Setter Property="Foreground" Value="{DynamicResource TextFillColorSecondaryBrush}" />
             <Setter Property="Margin" Value="0,2,0,0" />
         </Style>
     </Window.Resources>
     <Grid>
         <DockPanel>
             <Border DockPanel.Dock="Top"
-                    Background="{DynamicResource HeaderBackgroundBrush}"
-                    BorderBrush="{DynamicResource ControlBorderBrush}"
+                    Background="{DynamicResource LayerFillColorDefaultBrush}"
+                    BorderBrush="{DynamicResource DividerStrokeColorDefaultBrush}"
                     BorderThickness="0,0,0,1">
                 <DockPanel LastChildFill="True">
                     <ToggleButton x:Name="DarkModeToggle" DockPanel.Dock="Right"
@@ -173,8 +173,8 @@
                 </Grid.RowDefinitions>
 
                 <Border x:Name="FilterEditor" Grid.Row="0"
-                        Background="{DynamicResource ControlBackgroundBrush}"
-                        BorderBrush="{DynamicResource ControlBorderBrush}"
+                        Background="{DynamicResource LayerFillColorDefaultBrush}"
+                        BorderBrush="{DynamicResource DividerStrokeColorDefaultBrush}"
                         BorderThickness="0,0,0,1"
                         Padding="6"
                         Visibility="{Binding IsChecked, ElementName=FilterButton, Converter={StaticResource BoolToVis}}">
@@ -245,12 +245,16 @@
                           GridViewColumnHeader.Click="RequestList_HeaderClick"
                           ScrollViewer.HorizontalScrollBarVisibility="Auto">
                 <ListView.Resources>
+                    <!-- Compact header padding; Fluent's default GridViewColumnHeader padding is much taller. -->
+                    <Style TargetType="GridViewColumnHeader">
+                        <Setter Property="Padding" Value="6,2" />
+                    </Style>
                     <!-- Style for the selection arrow indicator -->
                     <Style x:Key="SelectionArrow" TargetType="TextBlock">
                         <Setter Property="Text" Value="" />
                         <Setter Property="FontSize" Value="14" />
                         <Setter Property="FontWeight" Value="Bold" />
-                        <Setter Property="Foreground" Value="{DynamicResource SelectionBackgroundBrush}" />
+                        <Setter Property="Foreground" Value="{DynamicResource AccentFillColorDefaultBrush}" />
                         <Setter Property="VerticalAlignment" Value="Center" />
                         <Setter Property="Margin" Value="2,0,4,0" />
                         <Setter Property="Visibility" Value="Hidden" />
@@ -264,6 +268,8 @@
                 </ListView.Resources>
                 <ListView.ItemContainerStyle>
                     <Style TargetType="ListViewItem" BasedOn="{StaticResource {x:Static GridView.GridViewItemContainerStyleKey}}">
+                        <Setter Property="Padding" Value="4,1" />
+                        <Setter Property="MinHeight" Value="0" />
                         <Setter Property="Background"
                                 Value="{Binding RowBackground,
                                                 TargetNullValue={x:Null},
@@ -294,7 +300,8 @@
                                             <!-- Content -->
                                             <GridViewRowPresenter Grid.Column="1"
                                                                   Content="{TemplateBinding Content}"
-                                                                  Columns="{TemplateBinding GridView.ColumnCollection}" />
+                                                                  Columns="{TemplateBinding GridView.ColumnCollection}"
+                                                                  Margin="0" />
                                         </Grid>
                                     </Border>
                                     <ControlTemplate.Triggers>
@@ -367,7 +374,7 @@
 
             <GridSplitter Grid.Column="1" Width="4" HorizontalAlignment="Stretch"
                           VerticalAlignment="Stretch"
-                          Background="{DynamicResource SplitterBackgroundBrush}" />
+                          Background="{DynamicResource ControlFillColorDefaultBrush}" />
 
             <TabControl Grid.Column="2" x:Name="MainTabControl" 
                         SelectionChanged="MainTabControl_SelectionChanged"
@@ -382,7 +389,7 @@
                                 <MenuItem Command="ApplicationCommands.Copy" />
                                 <MenuItem Command="ApplicationCommands.SelectAll" />
                                 <Separator />
-                                <MenuItem Header="Word wrap" IsCheckable="True"
+                                <MenuItem Header="Word wrap" IsCheckable="True" IsChecked="True"
                                           Click="WordWrap_Toggled" />
                             </ContextMenu>
                         </RichTextBox.ContextMenu>
@@ -414,7 +421,7 @@
                         </TextBox>
                         <GridSplitter x:Name="RequestPayloadSplitter" Grid.Row="2" Height="4"
                                       HorizontalAlignment="Stretch" VerticalAlignment="Center"
-                                      Background="{DynamicResource SplitterBackgroundBrush}" />
+                                      Background="{DynamicResource ControlFillColorDefaultBrush}" />
                         <StackPanel Grid.Row="3" x:Name="RequestPayloadFormatPanel"
                                     Orientation="Horizontal" Margin="4,4,4,2">
                             <TextBlock Text="Payload format:" VerticalAlignment="Center"
@@ -449,7 +456,7 @@
                             <ScrollViewer x:Name="RequestPayloadImageScroll"
                                           HorizontalScrollBarVisibility="Auto"
                                           VerticalScrollBarVisibility="Auto"
-                                          Background="{DynamicResource ImageBackgroundBrush}"
+                                          Background="White"
                                           Visibility="Collapsed">
                                 <Image x:Name="RequestPayloadImage" Stretch="None"
                                        HorizontalAlignment="Left" VerticalAlignment="Top" />
@@ -457,7 +464,7 @@
                             <ScrollViewer x:Name="RequestPayloadSvgScroll"
                                           HorizontalScrollBarVisibility="Auto"
                                           VerticalScrollBarVisibility="Auto"
-                                          Background="{DynamicResource ImageBackgroundBrush}"
+                                          Background="White"
                                           Visibility="Collapsed">
                                 <svgc:SvgViewbox x:Name="RequestPayloadSvg"
                                                  HorizontalAlignment="Left"
@@ -465,7 +472,7 @@
                             </ScrollViewer>
                             <TextBlock x:Name="RequestNoPayloadText" Text="(no payload)"
                                        FontStyle="Italic"
-                                       Foreground="{DynamicResource SubtleForegroundBrush}" Padding="6"
+                                       Foreground="{DynamicResource TextFillColorSecondaryBrush}" Padding="6"
                                        VerticalAlignment="Top" HorizontalAlignment="Left"
                                        Visibility="Collapsed" />
                         </Grid>
@@ -497,7 +504,7 @@
                         </TextBox>
                         <GridSplitter x:Name="ResponsePayloadSplitter" Grid.Row="2" Height="4"
                                       HorizontalAlignment="Stretch" VerticalAlignment="Center"
-                                      Background="{DynamicResource SplitterBackgroundBrush}" />
+                                      Background="{DynamicResource ControlFillColorDefaultBrush}" />
                         <StackPanel Grid.Row="3" x:Name="ResponsePayloadFormatPanel"
                                     Orientation="Horizontal" Margin="4,4,4,2">
                             <TextBlock Text="Payload format:" VerticalAlignment="Center"
@@ -532,7 +539,7 @@
                             <ScrollViewer x:Name="ResponsePayloadImageScroll"
                                           HorizontalScrollBarVisibility="Auto"
                                           VerticalScrollBarVisibility="Auto"
-                                          Background="{DynamicResource ImageBackgroundBrush}"
+                                          Background="White"
                                           Visibility="Collapsed">
                                 <Image x:Name="ResponsePayloadImage" Stretch="None"
                                        HorizontalAlignment="Left" VerticalAlignment="Top" />
@@ -540,7 +547,7 @@
                             <ScrollViewer x:Name="ResponsePayloadSvgScroll"
                                           HorizontalScrollBarVisibility="Auto"
                                           VerticalScrollBarVisibility="Auto"
-                                          Background="{DynamicResource ImageBackgroundBrush}"
+                                          Background="White"
                                           Visibility="Collapsed">
                                 <svgc:SvgViewbox x:Name="ResponsePayloadSvg"
                                                  HorizontalAlignment="Left"
@@ -548,7 +555,7 @@
                             </ScrollViewer>
                             <TextBlock x:Name="ResponseNoPayloadText" Text="(no payload)"
                                        FontStyle="Italic"
-                                       Foreground="{DynamicResource SubtleForegroundBrush}" Padding="6"
+                                       Foreground="{DynamicResource TextFillColorSecondaryBrush}" Padding="6"
                                        VerticalAlignment="Top" HorizontalAlignment="Left"
                                        Visibility="Collapsed" />
                         </Grid>
@@ -564,7 +571,7 @@
                                 <MenuItem Command="ApplicationCommands.Copy" />
                                 <MenuItem Command="ApplicationCommands.SelectAll" />
                                 <Separator />
-                                <MenuItem Header="Word wrap" IsCheckable="True"
+                                <MenuItem Header="Word wrap" IsCheckable="True" IsChecked="True"
                                           Click="WordWrap_Toggled" />
                             </ContextMenu>
                         </RichTextBox.ContextMenu>
@@ -574,12 +581,12 @@
         </Grid>
     </DockPanel>
 
-        <Grid x:Name="BusyOverlay" Background="{DynamicResource OverlayBackgroundBrush}"
+        <Grid x:Name="BusyOverlay" Background="#80000000"
               Visibility="Collapsed" Panel.ZIndex="100">
-            <Border Background="{DynamicResource OverlayCardBackgroundBrush}"
+            <Border Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
                     CornerRadius="4" Padding="20"
                     HorizontalAlignment="Center" VerticalAlignment="Center"
-                    BorderBrush="{DynamicResource OverlayCardBorderBrush}" BorderThickness="1">
+                    BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1">
                 <StackPanel MinWidth="240">
                     <TextBlock x:Name="BusyText" Text="Loading trace..." FontWeight="Bold"
                                HorizontalAlignment="Center" Margin="0,0,0,8" />

@@ -41,10 +41,9 @@ namespace HttpTraceAnalyser
         // Word-wrap state for the RichTextBox viewers (Summary, Mapi). RichTextBox has
         // no built-in wrap toggle; we simulate it by pinning Document.PageWidth. State
         // is tracked here so that rebuilding the FlowDocument preserves the user's choice.
-        // Default (unchecked) = no wrap.
-        private bool _summaryWrap;
-        private bool _mapiWrap;
-        private const double NoWrapPageWidth = 5000d;
+        // Default (checked) = wrap, so no unnecessary horizontal scroll bar is shown.
+        private bool _summaryWrap = true;
+        private bool _mapiWrap = true;
 
         // Cached loader-level summary (e.g. ETL provider event counts). Shown in the
         // Summary viewer whenever no row is selected, so it stays visible even when
@@ -1034,9 +1033,10 @@ namespace HttpTraceAnalyser
         {
             if (rtb.Document is null)
                 return;
-            // NaN = auto = wraps to container; a large fixed page width prevents wrapping
-            // and lets the horizontal scroll bar appear.
-            rtb.Document.PageWidth = wrap ? double.NaN : NoWrapPageWidth;
+            // NaN = auto = wraps to the viewport width. WPF does not accept
+            // double.PositiveInfinity for PageWidth (throws ArgumentException), so we
+            // always use NaN and let the document auto-size to the viewport.
+            rtb.Document.PageWidth = double.NaN;
         }
 
         private void RequestViewerGrid_SizeChanged(object sender, SizeChangedEventArgs e)

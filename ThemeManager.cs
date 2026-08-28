@@ -14,14 +14,12 @@ namespace HttpTraceAnalyser
     }
 
     /// <summary>
-    /// Detects and tracks the system theme. Theme colors are now automatically
-    /// handled by SystemColors in the resource dictionaries.
+    /// Detects and tracks the system theme and drives WPF's built-in Fluent
+    /// theme (Application.ThemeMode), which themes all standard controls for
+    /// light/dark mode without a custom brush ResourceDictionary.
     /// </summary>
     public static class ThemeManager
     {
-        private static readonly Uri LightUri = new("Themes/Light.xaml", UriKind.Relative);
-        private static readonly Uri DarkUri = new("Themes/Dark.xaml", UriKind.Relative);
-
         public static AppTheme Current { get; private set; } = AppTheme.Light;
 
         public static event EventHandler? ThemeChanged;
@@ -49,33 +47,14 @@ namespace HttpTraceAnalyser
             if (app is null)
                 return;
 
-            var uri = theme == AppTheme.Dark ? DarkUri : LightUri;
-            var newDict = new ResourceDictionary { Source = uri };
-
-            var merged = app.Resources.MergedDictionaries;
-            int paletteIndex = -1;
-            for (int i = 0; i < merged.Count; i++)
-            {
-                var src = merged[i].Source;
-                if (src is not null &&
-                    (src.OriginalString.EndsWith("Light.xaml", StringComparison.OrdinalIgnoreCase) ||
-                     src.OriginalString.EndsWith("Dark.xaml", StringComparison.OrdinalIgnoreCase)))
-                {
-                    paletteIndex = i;
-                    break;
-                }
-            }
-
-            if (paletteIndex >= 0)
-                merged[paletteIndex] = newDict;
-            else
-                merged.Insert(0, newDict);
+            // WPF's built-in Fluent theme themes all standard controls
+            // (toolbars, menus, grids, text boxes, etc.) for light/dark mode.
+#pragma warning disable WPF0001 // ThemeMode is for evaluation purposes only.
+            app.ThemeMode = theme == AppTheme.Dark ? ThemeMode.Dark : ThemeMode.Light;
+#pragma warning restore WPF0001
 
             Current = theme;
             ThemeChanged?.Invoke(null, EventArgs.Empty);
-
-            // Force UI refresh to apply system color changes
-            app.MainWindow?.InvalidateVisual();
         }
     }
 
@@ -91,7 +70,7 @@ namespace HttpTraceAnalyser
             if (value is Brush brush)
                 return brush;
 
-            return Application.Current?.TryFindResource("WindowForegroundBrush") as Brush
+            return Application.Current?.TryFindResource("TextFillColorPrimaryBrush") as Brush
                 ?? SystemColors.ControlTextBrush;
         }
 
@@ -119,7 +98,7 @@ namespace HttpTraceAnalyser
             if (values.Length > 1 && values[1] is SolidColorBrush backgroundBrush)
                 return GetContrastingForeground(backgroundBrush.Color);
 
-            return Application.Current?.TryFindResource("WindowForegroundBrush") as Brush
+            return Application.Current?.TryFindResource("TextFillColorPrimaryBrush") as Brush
                 ?? SystemColors.ControlTextBrush;
         }
 
