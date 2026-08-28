@@ -320,6 +320,49 @@ namespace HttpTraceAnalyser
 
         private readonly Dictionary<GridViewColumn, double> _savedColumnWidths = new();
 
+        private void RequestList_ContextMenuOpening(object sender, ContextMenuEventArgs e)
+        {
+            var hasRow = RequestList.SelectedItem is DataRowView;
+            FilterMenuItem.IsEnabled = hasRow;
+
+            if (RequestList.SelectedItem is DataRowView drv)
+            {
+                var host = drv.Row[TraceDataSchema.Host] as string ?? string.Empty;
+                var method = drv.Row[TraceDataSchema.Method] as string ?? string.Empty;
+                var path = drv.Row[TraceDataSchema.Path] as string ?? string.Empty;
+
+                SetFilterMenuItem(FilterHostMenuItem, "only host", FilterField.Host, FilterComparator.Equals, host);
+                SetFilterMenuItem(ExcludeHostMenuItem, "exclude host", FilterField.Host, FilterComparator.NotEquals, host);
+
+                SetFilterMenuItem(FilterMethodMenuItem, "only METHOD", FilterField.Method, FilterComparator.Equals, method);
+                SetFilterMenuItem(ExcludeMethodMenuItem, "exclude METHOD", FilterField.Method, FilterComparator.NotEquals, method);
+
+                SetFilterMenuItem(FilterPathMenuItem, "only path", FilterField.Path, FilterComparator.Equals, path);
+                SetFilterMenuItem(ExcludePathMenuItem, "exclude path", FilterField.Path, FilterComparator.NotEquals, path);
+            }
+        }
+
+        private static void SetFilterMenuItem(MenuItem item, string headerPrefix, FilterField field, FilterComparator comparator, string value)
+        {
+            item.Header = $"{headerPrefix} {value}";
+            item.Tag = (field, comparator, value);
+            item.IsEnabled = !string.IsNullOrEmpty(value);
+        }
+
+        private void FilterMenuItem_Click(object sender, RoutedEventArgs e)
+        {
+            if (sender is not MenuItem { Tag: (FilterField field, FilterComparator comparator, string value) } || string.IsNullOrEmpty(value))
+                return;
+
+            FilterRuleSet.Rules.Add(new FilterRule
+            {
+                Combinator = FilterCombinator.And,
+                Field = field,
+                Comparator = comparator,
+                Value = value,
+            });
+        }
+
         private void RemoveItems_Click(object sender, RoutedEventArgs e)
         {
             if (_trace is null || RequestList.SelectedItems.Count == 0)

@@ -210,21 +210,26 @@
                                 <DataTemplate>
                                     <Grid>
                                         <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="44" />
+                                            <ColumnDefinition Width="60" />
                                             <ColumnDefinition Width="90" />
                                             <ColumnDefinition Width="110" />
                                             <ColumnDefinition Width="*" />
                                             <ColumnDefinition Width="Auto" />
                                         </Grid.ColumnDefinitions>
-                                        <TextBlock Grid.Column="0" Text="{Binding Combinator}"
-                                                   FontStyle="Italic" Foreground="Gray"
-                                                   VerticalAlignment="Center" />
-                                        <TextBlock Grid.Column="1" Text="{Binding Field}"
-                                                   FontWeight="Bold" VerticalAlignment="Center" />
-                                        <TextBlock Grid.Column="2" Text="{Binding Comparator}"
-                                                   VerticalAlignment="Center" />
-                                        <TextBlock Grid.Column="3" Text="{Binding Value}"
-                                                   VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                                        <ComboBox Grid.Column="0"
+                                                  ItemsSource="{Binding Source={StaticResource FilterCombinatorValues}}"
+                                                  SelectedItem="{Binding Combinator}"
+                                                  FontStyle="Italic" VerticalAlignment="Center" />
+                                        <ComboBox Grid.Column="1"
+                                                  ItemsSource="{Binding Source={StaticResource FilterFieldValues}}"
+                                                  SelectedItem="{Binding Field}"
+                                                  FontWeight="Bold" VerticalAlignment="Center" />
+                                        <ComboBox Grid.Column="2"
+                                                  ItemsSource="{Binding Source={StaticResource FilterComparatorValues}}"
+                                                  SelectedItem="{Binding Comparator}"
+                                                  VerticalAlignment="Center" />
+                                        <TextBox Grid.Column="3" Text="{Binding Value, UpdateSourceTrigger=PropertyChanged}"
+                                                 VerticalAlignment="Center" VerticalContentAlignment="Center" />
                                         <Button Grid.Column="4" Content="&#x2715;" Padding="6,0"
                                                 Click="RemoveRule_Click" Tag="{Binding}" />
                                     </Grid>
@@ -243,6 +248,7 @@
                           SelectionMode="Extended"
                           SelectionChanged="RequestList_SelectionChanged"
                           GridViewColumnHeader.Click="RequestList_HeaderClick"
+                          ContextMenuOpening="RequestList_ContextMenuOpening"
                           ScrollViewer.HorizontalScrollBarVisibility="Auto">
                 <ListView.Resources>
                     <!-- Compact header padding; Fluent's default GridViewColumnHeader padding is much taller. -->
@@ -317,6 +323,17 @@
                 <ListView.ContextMenu>
                     <ContextMenu>
                         <MenuItem Header="Remove" Click="RemoveItems_Click" />
+                        <Separator />
+                        <MenuItem x:Name="FilterMenuItem" Header="Filter">
+                            <MenuItem x:Name="FilterHostMenuItem" Click="FilterMenuItem_Click" />
+                            <MenuItem x:Name="ExcludeHostMenuItem" Click="FilterMenuItem_Click" />
+                            <Separator />
+                            <MenuItem x:Name="FilterMethodMenuItem" Click="FilterMenuItem_Click" />
+                            <MenuItem x:Name="ExcludeMethodMenuItem" Click="FilterMenuItem_Click" />
+                            <Separator />
+                            <MenuItem x:Name="FilterPathMenuItem" Click="FilterMenuItem_Click" />
+                            <MenuItem x:Name="ExcludePathMenuItem" Click="FilterMenuItem_Click" />
+                        </MenuItem>
                     </ContextMenu>
                 </ListView.ContextMenu>
                 <ListView.View>
