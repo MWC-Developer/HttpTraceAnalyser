@@ -30,6 +30,72 @@
                 <x:Type TypeName="model:FilterCombinator" />
             </ObjectDataProvider.MethodParameters>
         </ObjectDataProvider>
+
+        <!-- Ribbon-style toolbar resources -->
+        <Style x:Key="RibbonButtonStyle" TargetType="{x:Type ButtonBase}">
+            <Setter Property="Margin" Value="2,2" />
+            <Setter Property="Padding" Value="6,2" />
+            <Setter Property="MinWidth" Value="64" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderBrush" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Foreground" Value="{DynamicResource HeaderForegroundBrush}" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="{x:Type ButtonBase}">
+                        <Border x:Name="RibbonButtonBorder"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                Padding="{TemplateBinding Padding}"
+                                CornerRadius="2">
+                            <StackPanel Orientation="Vertical" HorizontalAlignment="Center">
+                                <TextBlock x:Name="RibbonButtonIcon"
+                                           Text="{TemplateBinding Tag}"
+                                           FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets"
+                                           FontSize="20"
+                                           HorizontalAlignment="Center" />
+                                <ContentPresenter HorizontalAlignment="Center"
+                                                   Margin="0,2,0,0" />
+                            </StackPanel>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="Tag" Value="{x:Null}">
+                                <Setter TargetName="RibbonButtonIcon" Property="Visibility" Value="Collapsed" />
+                            </Trigger>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="RibbonButtonBorder" Property="Background" Value="{DynamicResource ControlBorderBrush}" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="RibbonButtonBorder" Property="Background" Value="{DynamicResource ControlBackgroundBrush}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="RibbonGroupStyle" TargetType="{x:Type Border}">
+            <Setter Property="BorderBrush" Value="{DynamicResource ControlBorderBrush}" />
+            <Setter Property="BorderThickness" Value="0,0,1,0" />
+            <Setter Property="Padding" Value="4,2" />
+        </Style>
+
+        <Style x:Key="RibbonToggleButtonStyle" TargetType="{x:Type ToggleButton}" BasedOn="{StaticResource RibbonButtonStyle}">
+            <Style.Triggers>
+                <Trigger Property="IsChecked" Value="True">
+                    <Setter Property="Background" Value="{DynamicResource ControlBackgroundBrush}" />
+                    <Setter Property="BorderBrush" Value="{DynamicResource ControlBorderBrush}" />
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style x:Key="RibbonGroupLabelStyle" TargetType="{x:Type TextBlock}">
+            <Setter Property="HorizontalAlignment" Value="Center" />
+            <Setter Property="FontSize" Value="10" />
+            <Setter Property="Foreground" Value="{DynamicResource HeaderForegroundBrush}" />
+            <Setter Property="Margin" Value="0,2,0,0" />
+        </Style>
     </Window.Resources>
     <Grid>
         <DockPanel>
@@ -44,30 +110,51 @@
                                   Checked="DarkModeToggle_Changed"
                                   Unchecked="DarkModeToggle_Changed" />
                     <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                        <StackPanel.Resources>
-                            <Style TargetType="Button">
-                                <Setter Property="Margin" Value="2,3" />
-                                <Setter Property="Padding" Value="10,3" />
-                                <Setter Property="MinWidth" Value="60" />
-                            </Style>
-                            <Style TargetType="ToggleButton">
-                                <Setter Property="Margin" Value="2,3" />
-                                <Setter Property="Padding" Value="10,3" />
-                                <Setter Property="MinWidth" Value="60" />
-                            </Style>
-                            <Style TargetType="Separator">
-                                <Setter Property="Margin" Value="4,4" />
-                                <Setter Property="Background"
-                                        Value="{DynamicResource ControlBorderBrush}" />
-                            </Style>
-                        </StackPanel.Resources>
-                        <Button x:Name="OpenFileButton" Content="Open file" Click="OpenFileButton_Click" />
-                        <Separator />
-                        <Button x:Name="HighlightsButton" Content="Highlights" Click="HighlightsButton_Click" />
-                        <ToggleButton x:Name="FilterButton" Content="Filter" />
-                        <Separator />
-                        <Button x:Name="PreviousErrorButton" Content="Previous Error" Click="PreviousErrorButton_Click" />
-                        <Button x:Name="NextErrorButton" Content="Next Error" Click="NextErrorButton_Click" />
+                        <!-- File group -->
+                        <Border Style="{StaticResource RibbonGroupStyle}">
+                            <StackPanel Orientation="Vertical">
+                                <StackPanel Orientation="Horizontal">
+                                    <Button x:Name="OpenFileButton" Content="Open"
+                                            Tag="&#xE8E5;"
+                                            Style="{StaticResource RibbonButtonStyle}"
+                                            Click="OpenFileButton_Click" />
+                                </StackPanel>
+                                <TextBlock Text="File" Style="{StaticResource RibbonGroupLabelStyle}" />
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Options group -->
+                        <Border Style="{StaticResource RibbonGroupStyle}">
+                            <StackPanel Orientation="Vertical">
+                                <StackPanel Orientation="Horizontal">
+                                    <Button x:Name="HighlightsButton" Content="Highlights"
+                                            Tag="&#xE12F;"
+                                            Style="{StaticResource RibbonButtonStyle}"
+                                            Click="HighlightsButton_Click" />
+                                </StackPanel>
+                                <TextBlock Text="Options" Style="{StaticResource RibbonGroupLabelStyle}" />
+                            </StackPanel>
+                        </Border>
+
+                        <!-- View group -->
+                        <Border Style="{StaticResource RibbonGroupStyle}" BorderThickness="0">
+                            <StackPanel Orientation="Vertical">
+                                <StackPanel Orientation="Horizontal">
+                                    <ToggleButton x:Name="FilterButton" Content="Filter"
+                                                  Tag="&#xE71C;"
+                                                  Style="{StaticResource RibbonToggleButtonStyle}" />
+                                    <Button x:Name="PreviousErrorButton" Content="Previous Error"
+                                            Tag="&#xE74A;"
+                                            Style="{StaticResource RibbonButtonStyle}"
+                                            Click="PreviousErrorButton_Click" />
+                                    <Button x:Name="NextErrorButton" Content="Next Error"
+                                            Tag="&#xE74B;"
+                                            Style="{StaticResource RibbonButtonStyle}"
+                                            Click="NextErrorButton_Click" />
+                                </StackPanel>
+                                <TextBlock Text="View" Style="{StaticResource RibbonGroupLabelStyle}" />
+                            </StackPanel>
+                        </Border>
                     </StackPanel>
                 </DockPanel>
             </Border>
