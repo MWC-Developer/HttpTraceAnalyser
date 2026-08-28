@@ -153,6 +153,18 @@
         <Setter Property="Foreground" Value="{DynamicResource ControlForegroundBrush}" />
     </Style>
 
+    <Style TargetType="{x:Type Button}">
+        <Setter Property="Background" Value="{DynamicResource ControlBackgroundBrush}" />
+        <Setter Property="Foreground" Value="{DynamicResource ControlForegroundBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource ControlBorderBrush}" />
+    </Style>
+
+    <Style TargetType="{x:Type ToggleButton}">
+        <Setter Property="Background" Value="{DynamicResource ControlBackgroundBrush}" />
+        <Setter Property="Foreground" Value="{DynamicResource ControlForegroundBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource ControlBorderBrush}" />
+    </Style>
+
     <Style TargetType="{x:Type ToolBarTray}">
         <Setter Property="Background" Value="Transparent" />
     </Style>

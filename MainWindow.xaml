@@ -9,7 +9,10 @@
         xmlns:avalonedit="http://icsharpcode.net/sharpdevelop/avalonedit"
         xmlns:svgc="http://sharpvectors.codeplex.com/svgc/"
         mc:Ignorable="d"
-        Title="HTTP Trace Analyser" Height="600" Width="1000">
+        Title="HTTP Trace Analyser" Height="800" Width="1600"
+        WindowState="Maximized"
+        Background="{DynamicResource WindowBackgroundBrush}"
+        Foreground="{DynamicResource WindowForegroundBrush}">
     <Window.Resources>
         <BooleanToVisibilityConverter x:Key="BoolToVis" />
         <ObjectDataProvider x:Key="FilterFieldValues" MethodName="GetValues" ObjectType="{x:Type sys:Enum}">
@@ -38,7 +41,6 @@
                     <ToggleButton x:Name="DarkModeToggle" DockPanel.Dock="Right"
                                   Content="Dark mode" Margin="4,3" Padding="10,3"
                                   VerticalAlignment="Center"
-                                  Foreground="Black"
                                   Checked="DarkModeToggle_Changed"
                                   Unchecked="DarkModeToggle_Changed" />
                     <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
@@ -47,13 +49,11 @@
                                 <Setter Property="Margin" Value="2,3" />
                                 <Setter Property="Padding" Value="10,3" />
                                 <Setter Property="MinWidth" Value="60" />
-                                <Setter Property="Foreground" Value="Black" />
                             </Style>
                             <Style TargetType="ToggleButton">
                                 <Setter Property="Margin" Value="2,3" />
                                 <Setter Property="Padding" Value="10,3" />
                                 <Setter Property="MinWidth" Value="60" />
-                                <Setter Property="Foreground" Value="Black" />
                             </Style>
                             <Style TargetType="Separator">
                                 <Setter Property="Margin" Value="4,4" />
@@ -74,9 +74,9 @@
 
         <Grid>
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="560" MinWidth="200" />
+                <ColumnDefinition Width="900" MinWidth="400" />
                 <ColumnDefinition Width="Auto" />
-                <ColumnDefinition Width="*" MinWidth="200" />
+                <ColumnDefinition Width="*" MinWidth="300" />
             </Grid.ColumnDefinitions>
 
             <Grid Grid.Column="0">
@@ -86,8 +86,9 @@
                 </Grid.RowDefinitions>
 
                 <Border x:Name="FilterEditor" Grid.Row="0"
-                        Background="#FFF3F3F3"
-                        BorderBrush="Gray" BorderThickness="0,0,0,1"
+                        Background="{DynamicResource ControlBackgroundBrush}"
+                        BorderBrush="{DynamicResource ControlBorderBrush}"
+                        BorderThickness="0,0,0,1"
                         Padding="6"
                         Visibility="{Binding IsChecked, ElementName=FilterButton, Converter={StaticResource BoolToVis}}">
                     <StackPanel>
@@ -154,7 +155,26 @@
                 <ListView x:Name="RequestList" Grid.Row="1"
                           SelectionMode="Extended"
                           SelectionChanged="RequestList_SelectionChanged"
-                          GridViewColumnHeader.Click="RequestList_HeaderClick">
+                          GridViewColumnHeader.Click="RequestList_HeaderClick"
+                          ScrollViewer.HorizontalScrollBarVisibility="Auto">
+                <ListView.Resources>
+                    <!-- Style for the selection arrow indicator -->
+                    <Style x:Key="SelectionArrow" TargetType="TextBlock">
+                        <Setter Property="Text" Value="" />
+                        <Setter Property="FontSize" Value="14" />
+                        <Setter Property="FontWeight" Value="Bold" />
+                        <Setter Property="Foreground" Value="{DynamicResource SelectionBackgroundBrush}" />
+                        <Setter Property="VerticalAlignment" Value="Center" />
+                        <Setter Property="Margin" Value="2,0,4,0" />
+                        <Setter Property="Visibility" Value="Hidden" />
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding IsSelected, RelativeSource={RelativeSource AncestorType=ListViewItem}}" Value="True">
+                                <Setter Property="Text" Value="▶" />
+                                <Setter Property="Visibility" Value="Visible" />
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </ListView.Resources>
                 <ListView.ItemContainerStyle>
                     <Style TargetType="ListViewItem" BasedOn="{StaticResource {x:Static GridView.GridViewItemContainerStyleKey}}">
                         <Setter Property="Background"
@@ -167,6 +187,35 @@
                                     <Binding Path="RowForeground" />
                                     <Binding Path="RowBackground" />
                                 </MultiBinding>
+                            </Setter.Value>
+                        </Setter>
+                        <Setter Property="Template">
+                            <Setter.Value>
+                                <ControlTemplate TargetType="ListViewItem">
+                                    <Border Background="{TemplateBinding Background}"
+                                            BorderBrush="{TemplateBinding BorderBrush}"
+                                            BorderThickness="{TemplateBinding BorderThickness}">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto" />
+                                                <ColumnDefinition Width="*" />
+                                            </Grid.ColumnDefinitions>
+
+                                            <!-- Selection arrow indicator -->
+                                            <TextBlock Grid.Column="0" Style="{StaticResource SelectionArrow}" />
+
+                                            <!-- Content -->
+                                            <GridViewRowPresenter Grid.Column="1"
+                                                                  Content="{TemplateBinding Content}"
+                                                                  Columns="{TemplateBinding GridView.ColumnCollection}" />
+                                        </Grid>
+                                    </Border>
+                                    <ControlTemplate.Triggers>
+                                        <Trigger Property="IsSelected" Value="True">
+                                            <Setter Property="FontWeight" Value="SemiBold" />
+                                        </Trigger>
+                                    </ControlTemplate.Triggers>
+                                </ControlTemplate>
                             </Setter.Value>
                         </Setter>
                     </Style>
@@ -204,6 +253,8 @@
                                 <MenuItem Header="Latency (ms)" IsCheckable="True" IsChecked="True"
                                           Tag="{x:Reference LatencyColumn}"
                                           Checked="ColumnVisibility_Changed" Unchecked="ColumnVisibility_Changed" />
+                                <Separator />
+                                <MenuItem Header="Auto-size Columns" Click="AutoSizeColumns_Click" />
                             </ContextMenu>
                         </GridView.ColumnHeaderContextMenu>
                         <GridViewColumn x:Name="DateColumn" Header="Date" Width="0"
@@ -231,7 +282,9 @@
                           VerticalAlignment="Stretch"
                           Background="{DynamicResource SplitterBackgroundBrush}" />
 
-            <TabControl Grid.Column="2">
+            <TabControl Grid.Column="2" x:Name="MainTabControl" 
+                        SelectionChanged="MainTabControl_SelectionChanged"
+                        PreviewMouseDown="MainTabControl_PreviewMouseDown">
                 <TabItem Header="Summary">
                     <RichTextBox x:Name="SummaryViewer" IsReadOnly="True"
                                  VerticalScrollBarVisibility="Auto"
@@ -249,7 +302,7 @@
                     </RichTextBox>
                 </TabItem>
                 <TabItem Header="Request">
-                    <Grid x:Name="RequestViewerGrid" SizeChanged="RequestViewerGrid_SizeChanged">
+                    <Grid x:Name="RequestViewerGrid" SizeChanged="RequestViewerGrid_SizeChanged" Visibility="Collapsed">
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto" />
                             <RowDefinition x:Name="RequestHeadersRow" Height="Auto" />
@@ -332,7 +385,7 @@
                     </Grid>
                 </TabItem>
                 <TabItem Header="Response">
-                    <Grid x:Name="ResponseViewerGrid" SizeChanged="ResponseViewerGrid_SizeChanged">
+                    <Grid x:Name="ResponseViewerGrid" SizeChanged="ResponseViewerGrid_SizeChanged" Visibility="Collapsed">
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto" />
                             <RowDefinition x:Name="ResponseHeadersRow" Height="Auto" />

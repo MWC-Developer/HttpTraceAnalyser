@@ -1,0 +1,33 @@
+ResponseCode,IsError,IsThrottling,Description
+100,false,false,Continue - The server has received the request headers and the client should proceed to send the request body.
+101,false,false,Switching Protocols - The requester has asked the server to switch protocols and the server has agreed to do so.
+200,false,false,OK - The request succeeded.
+201,false,false,Created - The request succeeded and a new resource was created as a result.
+202,false,false,Accepted - The request has been received but not yet acted upon.
+203,false,false,Non-Authoritative Information - The returned metadata is not exactly the same as is available from the origin server.
+204,false,false,No Content - There is no content to send for this request but the headers may be useful.
+206,false,false,Partial Content - This response code is used when the Range header is sent from the client to request only part of a resource.
+300,false,false,Multiple Choices - The request has more than one possible response.
+301,false,false,Moved Permanently - The URL of the requested resource has been changed permanently. Check the Location header for the new URL.
+302,false,false,Found - The URI of the requested resource has been changed temporarily. Check the Location header.
+304,false,false,Not Modified - The resource has not been modified since the version specified by the request headers.
+307,false,false,Temporary Redirect - The server sends this response to direct the client to get the requested resource at another URI.
+308,false,false,Permanent Redirect - The resource is now permanently located at another URI specified by the Location header.
+400,true,false,Bad Request - The server cannot process the request due to client error (e.g. malformed syntax). Verify request format and parameters.
+401,true,false,Unauthorized - Authentication is required and has failed or has not been provided. Check credentials and authentication tokens.
+403,true,false,Forbidden - The client does not have access rights to the content. Verify permissions and authorization settings.
+404,true,false,Not Found - The server cannot find the requested resource. Verify the URL and ensure the resource exists.
+405,true,false,Method Not Allowed - The request method is not supported for the requested resource. Check allowed HTTP methods for this endpoint.
+406,true,false,Not Acceptable - The requested resource is not available in a format that respects the Accept headers. Adjust Accept headers.
+408,true,false,Request Timeout - The server timed out waiting for the request. Retry the request or check network connectivity.
+409,true,false,Conflict - The request conflicts with the current state of the server. Review and resolve the conflicting state.
+410,true,false,Gone - The requested resource is no longer available and will not be available again. Remove references to this resource.
+413,true,false,Payload Too Large - The request entity is larger than limits defined by server. Reduce request payload size.
+414,true,false,URI Too Long - The URI requested by the client is longer than the server is willing to interpret. Shorten the URI.
+415,true,false,Unsupported Media Type - The media format of the requested data is not supported. Check Content-Type header.
+429,true,true,Too Many Requests - Rate limit exceeded. Implement backoff and retry after the time specified in Retry-After header (or exponential backoff if no header indication).
+500,true,false,Internal Server Error - The server encountered an unexpected condition. Contact support or check server logs for details.
+501,true,false,Not Implemented - The request method is not supported by the server. Use a different HTTP method.
+502,true,false,Bad Gateway - The server received an invalid response from the upstream server. Check upstream server status and connectivity.
+503,true,true,Service Unavailable - The server is not ready to handle the request (maintenance or overload). Retry after some time or check service status.
+504,true,false,Gateway Timeout - The server acting as a gateway did not get a response in time. Retry or increase timeout settings.

@@ -1,0 +1,99 @@
+<?xml version="1.0"?>
+<SyntaxDefinition name="JavaScript-Dark" extensions=".js" xmlns="http://icsharpcode.net/sharpdevelop/syntaxdefinition/2008">
+  <Color name="Comment" foreground="#6A9955" />
+  <Color name="String" foreground="#CE9178" />
+  <Color name="Keyword" foreground="#569CD6" fontWeight="normal" />
+  <Color name="MethodCall" foreground="#DCDCAA" />
+  <Color name="Number" foreground="#B5CEA8" />
+  <Color name="Operator" foreground="#D4D4D4" />
+
+  <RuleSet ignoreCase="false">
+	<!-- Single line comments -->
+	<Span color="Comment">
+	  <Begin>//</Begin>
+	</Span>
+
+	<!-- Multi-line comments -->
+	<Span color="Comment" multiline="true">
+	  <Begin>/\*</Begin>
+	  <End>\*/</End>
+	</Span>
+
+	<!-- Strings -->
+	<Span color="String">
+	  <Begin>"</Begin>
+	  <End>"</End>
+	  <RuleSet>
+		<Span begin="\\." end="." />
+	  </RuleSet>
+	</Span>
+
+	<Span color="String">
+	  <Begin>'</Begin>
+	  <End>'</End>
+	  <RuleSet>
+		<Span begin="\\." end="." />
+	  </RuleSet>
+	</Span>
+
+	<!-- Template literals -->
+	<Span color="String" multiline="true">
+	  <Begin>`</Begin>
+	  <End>`</End>
+	</Span>
+
+	<!-- Numbers -->
+	<Rule color="Number">
+	  \b0[xX][0-9a-fA-F]+|(\b\d+(\.\d+)?|\.\d+)([eE][+-]?\d+)?
+	</Rule>
+
+	<!-- Keywords -->
+	<Keywords color="Keyword">
+	  <Word>break</Word>
+	  <Word>case</Word>
+	  <Word>catch</Word>
+	  <Word>class</Word>
+	  <Word>const</Word>
+	  <Word>continue</Word>
+	  <Word>debugger</Word>
+	  <Word>default</Word>
+	  <Word>delete</Word>
+	  <Word>do</Word>
+	  <Word>else</Word>
+	  <Word>export</Word>
+	  <Word>extends</Word>
+	  <Word>finally</Word>
+	  <Word>for</Word>
+	  <Word>function</Word>
+	  <Word>if</Word>
+	  <Word>import</Word>
+	  <Word>in</Word>
+	  <Word>instanceof</Word>
+	  <Word>let</Word>
+	  <Word>new</Word>
+	  <Word>return</Word>
+	  <Word>super</Word>
+	  <Word>switch</Word>
+	  <Word>this</Word>
+	  <Word>throw</Word>
+	  <Word>try</Word>
+	  <Word>typeof</Word>
+	  <Word>var</Word>
+	  <Word>void</Word>
+	  <Word>while</Word>
+	  <Word>with</Word>
+	  <Word>yield</Word>
+	  <Word>async</Word>
+	  <Word>await</Word>
+	  <Word>true</Word>
+	  <Word>false</Word>
+	  <Word>null</Word>
+	  <Word>undefined</Word>
+	</Keywords>
+
+	<!-- Operators -->
+	<Rule color="Operator">
+	  [?{}[\]().,;:+\-*/%&amp;|^!~&lt;&gt;=]
+	</Rule>
+  </RuleSet>
+</SyntaxDefinition>

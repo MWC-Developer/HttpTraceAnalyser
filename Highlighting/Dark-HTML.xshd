@@ -1,0 +1,74 @@
+<?xml version="1.0"?>
+<SyntaxDefinition name="HTML-Dark" extensions=".htm;.html" xmlns="http://icsharpcode.net/sharpdevelop/syntaxdefinition/2008">
+  <Color name="Comment" foreground="#6A9955" />
+  <Color name="HtmlTag" foreground="#808080" />
+  <Color name="TagName" foreground="#569CD6" />
+  <Color name="AttributeName" foreground="#9CDCFE" />
+  <Color name="AttributeValue" foreground="#CE9178" />
+  <Color name="Entity" foreground="#B5CEA8" />
+  <Color name="ScriptTag" foreground="#808080" />
+  <Color name="StyleTag" foreground="#808080" />
+
+  <RuleSet ignoreCase="true">
+	<Span color="Comment" multiline="true">
+	  <Begin>&lt;!--</Begin>
+	  <End>--&gt;</End>
+	</Span>
+
+	<!-- Script blocks -->
+	<Span color="ScriptTag" multiline="true">
+	  <Begin>&lt;script</Begin>
+	  <End>&lt;/script&gt;</End>
+	  <RuleSet>
+		<Span color="AttributeValue" multiline="true">
+		  <Begin>"</Begin>
+		  <End>"</End>
+		</Span>
+		<Span color="AttributeValue" multiline="true">
+		  <Begin>'</Begin>
+		  <End>'</End>
+		</Span>
+		<Rule color="AttributeName">[\d\w_\-]+(?=(\s*=))</Rule>
+	  </RuleSet>
+	</Span>
+
+	<!-- Style blocks -->
+	<Span color="StyleTag" multiline="true">
+	  <Begin>&lt;style</Begin>
+	  <End>&lt;/style&gt;</End>
+	  <RuleSet>
+		<Span color="AttributeValue" multiline="true">
+		  <Begin>"</Begin>
+		  <End>"</End>
+		</Span>
+		<Span color="AttributeValue" multiline="true">
+		  <Begin>'</Begin>
+		  <End>'</End>
+		</Span>
+		<Rule color="AttributeName">[\d\w_\-]+(?=(\s*=))</Rule>
+	  </RuleSet>
+	</Span>
+
+	<!-- HTML Tags -->
+	<Span color="HtmlTag" multiline="true">
+	  <Begin>&lt;</Begin>
+	  <End>&gt;</End>
+	  <RuleSet>
+		<Span color="AttributeValue" multiline="true">
+		  <Begin>"</Begin>
+		  <End>"</End>
+		</Span>
+		<Span color="AttributeValue" multiline="true">
+		  <Begin>'</Begin>
+		  <End>'</End>
+		</Span>
+		<Rule color="AttributeName">[\d\w_\-]+(?=(\s*=))</Rule>
+	  </RuleSet>
+	</Span>
+
+	<!-- Entities -->
+	<Rule color="Entity">
+	  &amp;[\w\d#]+;
+	</Rule>
+  </RuleSet>
+</SyntaxDefinition>

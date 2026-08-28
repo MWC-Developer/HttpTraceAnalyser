@@ -12,6 +12,11 @@ namespace HttpTraceAnalyser
         protected override void OnStartup(StartupEventArgs e)
         {
             base.OnStartup(e);
+
+            // Globally disable link detection in all AvalonEdit controls to prevent
+            // regex catastrophic backtracking that causes UI hangs on large files
+            AvalonEditHelper.DisableLinkDetectionGlobally();
+
             ThemeManager.Apply(ThemeManager.GetSystemTheme());
         }
     }
