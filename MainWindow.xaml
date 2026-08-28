@@ -65,9 +65,11 @@
                             </Trigger>
                             <Trigger Property="IsMouseOver" Value="True">
                                 <Setter TargetName="RibbonButtonBorder" Property="Background" Value="{DynamicResource ControlFillColorSecondaryBrush}" />
+                                <Setter TargetName="RibbonButtonBorder" Property="BorderBrush" Value="{DynamicResource ControlStrokeColorDefaultBrush}" />
                             </Trigger>
                             <Trigger Property="IsPressed" Value="True">
                                 <Setter TargetName="RibbonButtonBorder" Property="Background" Value="{DynamicResource ControlFillColorTertiaryBrush}" />
+                                <Setter TargetName="RibbonButtonBorder" Property="BorderBrush" Value="{DynamicResource ControlStrokeColorSecondaryBrush}" />
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
