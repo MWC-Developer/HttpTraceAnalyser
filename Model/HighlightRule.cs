@@ -172,6 +172,7 @@ namespace HttpTraceAnalyser.Model
                 Operator = HighlightOperator.Range,
                 Value = "200-299",
                 BackgroundColor = Color.FromRgb(0xD4, 0xF7, 0xD4), // light green
+                IsEnabled = false,
             });
             Rules.Add(new HighlightRule
             {
