@@ -82,6 +82,63 @@ The format is auto-selected from `Content-Type` and can be overridden per side v
 
 Every viewer's context menu includes **Word wrap** (default off), alongside **Copy** and **Select all**.
 
+## MCP server (GitHub Copilot CLI integration)
+
+HttpTraceAnalyser can host an in-process [Model Context Protocol](https://modelcontextprotocol.io/) server, letting you drive the running app from the **GitHub Copilot CLI** — search the loaded trace, add highlight/filter rules, and select specific rows so they appear in the viewers, all via natural-language prompts.
+
+### Enabling the server
+
+1. Open a trace and click **Enable** in the **MCP Server** ribbon group (rightmost group in the toolbar). The button switches to **Disable** once the server is listening.
+2. The server binds to `http://127.0.0.1:5088` (loopback only — it is not reachable from other machines).
+3. Click **Disable** (or close the app) to stop it. The server is also stopped automatically on application exit even if left enabled.
+
+The listening port is defined by `McpHostManager.Port` in [`McpHostManager.cs`](McpHostManager.cs) if you need to change it.
+
+### Registering with GitHub Copilot CLI
+
+With the app running and the MCP server enabled, add it as an HTTP MCP server in your Copilot CLI MCP configuration file:
+
+```json
+{
+  "mcpServers": {
+    "httptraceanalyser": {
+      "type": "http",
+      "url": "http://127.0.0.1:5088"
+    }
+  }
+}
+```
+
+Verify it's registered with:
+
+```pwsh
+gh copilot mcp list
+```
+
+### Available tools
+
+Exposed from [`Mcp/TraceMcpTools.cs`](Mcp/TraceMcpTools.cs):
+
+| Tool | Purpose |
+| --- | --- |
+| `GetTraceInfo` | Returns the loaded trace's file path and message count. |
+| `SearchTrace` | Searches URL/Host/Path/Method columns for matching rows. |
+| `HighlightTrace` | Adds a highlight rule (column/operator/value/colors) to `HighlightRuleSet`. |
+| `ClearHighlights` | Removes all highlight rules. |
+| `FilterTrace` | Adds a filter rule (field/comparator/value/combinator) to `FilterRuleSet`. |
+| `ClearFilters` | Removes all filter rules. |
+| `SelectTraceRow` | Selects a row by its `Index` column value so it populates the viewers. |
+| `FindAndSelectTraceRow` | Finds the first row matching a field/comparator/value across the whole trace (ignoring active filters) and selects it. |
+
+Example prompts once the CLI is connected:
+
+- *"How many messages are in the loaded trace?"*
+- *"Highlight every row where the host contains 'contoso.com' in orange."*
+- *"Filter the trace to only show POST requests."*
+- *"Select the first request that returned a 500 error."*
+
+All tool calls are marshaled onto the UI thread, so results appear live in the running window — no need to switch back to the app to see the effect.
+
 ## Building and running
 
 Requires the **.NET 10 SDK** and Windows.
@@ -101,6 +158,8 @@ Or open `HttpTraceAnalyser.slnx` in Visual Studio 2026 (or newer) and press **F5
 | [AvalonEdit](https://www.nuget.org/packages/AvalonEdit) | Text editor with syntax highlighting for the payload viewers. |
 | [Microsoft.Diagnostics.Tracing.TraceEvent](https://www.nuget.org/packages/Microsoft.Diagnostics.Tracing.TraceEvent) | Managed ETW parser used by the `.etl` loader. |
 | [SharpVectors.Reloaded](https://www.nuget.org/packages/SharpVectors.Reloaded) | WPF SVG rendering. |
+| [ModelContextProtocol.AspNetCore](https://www.nuget.org/packages/ModelContextProtocol.AspNetCore) | Hosts the in-process MCP server used for GitHub Copilot CLI integration. |
+| [Microsoft.Extensions.Hosting](https://www.nuget.org/packages/Microsoft.Extensions.Hosting) | Generic host used to run the MCP server alongside the WPF UI. |
 
 ## Project layout
 
@@ -110,6 +169,9 @@ HttpTraceAnalyser/
 ├─ App.xaml / App.xaml.cs      // application entry point
 ├─ MainWindow.xaml(.cs)        // trace list, viewers, toolbar, filter panel
 ├─ HighlightsWindow.xaml(.cs)  // highlight rule editor
+├─ McpHostManager.cs           // starts/stops the in-process MCP HTTP server
+├─ Mcp/
+│  └─ TraceMcpTools.cs         // MCP tools exposed to GitHub Copilot CLI
 └─ Model/
    ├─ HttpMessage.cs           // HttpMessage / HttpRequest / HttpResponse
    ├─ HttpTraceFile.cs         // DataTable-backed base + loader registry
