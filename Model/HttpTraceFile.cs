@@ -49,7 +49,12 @@ namespace HttpTraceAnalyser.Model
                 [".saz"] = path => new SazTraceFile(path),
                 [".har"] = path => new HarTraceFile(path),
                 [".etl"] = path => new EtlTraceFile(path),
+                [".trace"] = path => new EwsTraceFile(path),
             };
+
+        // Extensions that are ambiguous (no format is uniquely tied to them) and therefore
+        // require sniffing the file content before dispatching to a loader.
+        private static readonly string[] AmbiguousExtensions = { ".log", ".txt" };
 
         // Delimiters used to serialize a header list into a single string cell.
         // Chosen to be characters that must not appear inside header names/values.
@@ -284,10 +289,18 @@ namespace HttpTraceAnalyser.Model
                 throw new FileNotFoundException("Trace file not found.", path);
 
             var ext = System.IO.Path.GetExtension(path);
-            if (!Loaders.TryGetValue(ext, out var loader))
-                throw new NotSupportedException($"Unsupported trace file type: '{ext}'.");
+            if (Loaders.TryGetValue(ext, out var loader))
+                return loader(path);
 
-            return loader(path);
+            // Extensions with no dedicated format (e.g. ".log", ".txt") or none at all:
+            // sniff the content to see if it matches a known format.
+            if ((Array.IndexOf(AmbiguousExtensions, ext) >= 0 || string.IsNullOrEmpty(ext))
+                && EwsTraceFile.LooksLikeEwsTrace(path))
+            {
+                return new EwsTraceFile(path);
+            }
+
+            throw new NotSupportedException($"Unsupported trace file type: '{ext}'.");
         }
 
         /// <summary>Registers a loader for an additional file extension (e.g. ".har").</summary>

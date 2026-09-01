@@ -602,10 +602,11 @@ namespace HttpTraceAnalyser
             var dialog = new Microsoft.Win32.OpenFileDialog
             {
                 Title = "Open HTTP trace file",
-                Filter = "HTTP trace files (*.saz;*.har;*.etl)|*.saz;*.har;*.etl|" +
+                Filter = "HTTP trace files (*.saz;*.har;*.etl;*.trace)|*.saz;*.har;*.etl;*.trace|" +
                          "Fiddler session archive (*.saz)|*.saz|" +
                          "HTTP archive (*.har)|*.har|" +
                          "Event Trace for Windows (*.etl)|*.etl|" +
+                         "EWS API trace (*.trace;*.log;*.txt)|*.trace;*.log;*.txt|" +
                          "All files (*.*)|*.*"
             };
 
