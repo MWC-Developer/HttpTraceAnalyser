@@ -4,7 +4,7 @@ A Windows desktop app for opening HTTP trace captures produced by different tool
 
 Built with WPF on **.NET 10** (`net10.0-windows`).
 
-![placeholder](docs/screenshot.png)
+![Sample trace with an error response selected](images/SampleTraceErrorResponse.png)
 
 ## Supported trace formats
 
@@ -137,7 +137,9 @@ Example prompts once the CLI is connected:
 - *"Filter the trace to only show POST requests."*
 - *"Select the first request that returned a 500 error."*
 
-All tool calls are marshaled onto the UI thread, so results appear live in the running window — no need to switch back to the app to see the effect.
+All tool calls are marshaled onto the UI thread, so results appear live in the running window — no need to switch back to the app to see the effect. For example, asking the CLI to locate an error selects the matching row in HttpTraceAnalyser so it's shown in the viewers:
+
+![GitHub Copilot CLI locating and selecting an error response in HttpTraceAnalyser](images/MCPControlShowError.png)
 
 ## Building and running
 
