@@ -29,6 +29,9 @@ namespace HttpTraceAnalyser
     {
         private HttpTraceFile? _trace;
 
+        /// <summary>Currently loaded trace file, if any. Exposed for external automation (e.g. the in-process MCP server).</summary>
+        public HttpTraceFile? Trace => _trace;
+
         // Cached request/response payload + headers for the currently selected row,
         // so switching the payload format doesn't require re-fetching from the DataTable.
         private byte[]? _requestPayload;
@@ -207,6 +210,75 @@ namespace HttpTraceAnalyser
         {
             var window = new HighlightsWindow { Owner = this };
             window.ShowDialog();
+        }
+
+        /// <summary>
+        /// Selects the row with the given <see cref="TraceDataSchema.Index"/> value in the trace grid,
+        /// scrolls it into view, and brings the window to the foreground. Intended for external
+        /// automation (e.g. the in-process MCP server). Returns a human-readable result message.
+        /// </summary>
+        public string SelectTraceRow(int index)
+        {
+            if (_trace is null)
+                return "No trace file is currently loaded.";
+
+            DataRowView? target = null;
+            foreach (var item in RequestList.Items)
+            {
+                if (item is DataRowView drv && drv.Row[TraceDataSchema.Index] is int idx && idx == index)
+                {
+                    target = drv;
+                    break;
+                }
+            }
+
+            if (target is null)
+                return $"Row #{index} was not found. It may not exist, or it may be hidden by the active filter (try clearing filters).";
+
+            RequestList.SelectedItems.Clear();
+            RequestList.SelectedItem = target;
+            RequestList.ScrollIntoView(target);
+            BringToFront();
+            return $"Selected row #{index}.";
+        }
+
+        /// <summary>
+        /// Finds the first row (in <see cref="TraceDataSchema.Index"/> order, across the full trace,
+        /// ignoring the active filter) matching the given field/comparator/value, and selects it.
+        /// Returns a human-readable result message. Intended for external automation.
+        /// </summary>
+        public string FindAndSelectTraceRow(FilterField field, FilterComparator comparator, string value)
+        {
+            if (_trace is null)
+                return "No trace file is currently loaded.";
+
+            var rule = new FilterRule { Field = field, Comparator = comparator, Value = value };
+            var expr = rule.BuildExpression();
+            if (string.IsNullOrEmpty(expr))
+                return "Could not build a query for the given criteria (check the value format, e.g. 'min-max' for Range).";
+
+            DataRow[] rows;
+            try
+            {
+                rows = _trace.Messages.Select(expr, $"[{TraceDataSchema.Index}] ASC");
+            }
+            catch (Exception ex) when (ex is EvaluateException or SyntaxErrorException or InvalidExpressionException)
+            {
+                return $"Query failed: {ex.Message}";
+            }
+
+            if (rows.Length == 0)
+                return $"No row matched {field} {comparator} '{value}'.";
+
+            var targetIndex = (int)rows[0][TraceDataSchema.Index];
+            return SelectTraceRow(targetIndex);
+        }
+
+        private void BringToFront()
+        {
+            if (WindowState == WindowState.Minimized)
+                WindowState = WindowState.Normal;
+            Activate();
         }
 
         private void NextErrorButton_Click(object sender, RoutedEventArgs e)
