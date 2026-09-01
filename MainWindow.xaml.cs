@@ -44,6 +44,8 @@ namespace HttpTraceAnalyser
         // Default (checked) = wrap, so no unnecessary horizontal scroll bar is shown.
         private bool _summaryWrap = true;
         private bool _mapiWrap = true;
+        private bool _restWrap = true;
+        private bool _soapWrap = true;
 
         // Cached loader-level summary (e.g. ETL provider event counts). Shown in the
         // Summary viewer whenever no row is selected, so it stays visible even when
@@ -686,6 +688,10 @@ namespace HttpTraceAnalyser
             ApplyRichTextBoxWrap(SummaryViewer, _summaryWrap);
             MapiViewer.Document = new FlowDocument();
             ApplyRichTextBoxWrap(MapiViewer, _mapiWrap);
+            RestViewer.Document = new FlowDocument();
+            ApplyRichTextBoxWrap(RestViewer, _restWrap);
+            SoapViewer.Document = new FlowDocument();
+            ApplyRichTextBoxWrap(SoapViewer, _soapWrap);
 
             _requestPayload = null;
             _requestHeaders = null;
@@ -856,6 +862,10 @@ namespace HttpTraceAnalyser
                 await PopulateResponseViewer(response);
                 MapiViewer.Document = BuildMapiDocument(request, response);
                 ApplyRichTextBoxWrap(MapiViewer, _mapiWrap);
+                RestViewer.Document = BuildRestDocument(request, response);
+                ApplyRichTextBoxWrap(RestViewer, _restWrap);
+                SoapViewer.Document = BuildSoapDocument(request, response);
+                ApplyRichTextBoxWrap(SoapViewer, _soapWrap);
             }
             finally
             {
@@ -1070,6 +1080,8 @@ namespace HttpTraceAnalyser
                 case RichTextBox rtb:
                     if (rtb == SummaryViewer) _summaryWrap = wrap;
                     else if (rtb == MapiViewer) _mapiWrap = wrap;
+                    else if (rtb == RestViewer) _restWrap = wrap;
+                    else if (rtb == SoapViewer) _soapWrap = wrap;
                     ApplyRichTextBoxWrap(rtb, wrap);
                     break;
             }
@@ -1589,6 +1601,99 @@ namespace HttpTraceAnalyser
             if (respIsMapi && response is not null)
                 AppendMapiSection(doc, "Response", MapiHttpDecoder.Decode(response, isResponse: true), response.Payload);
 
+            return doc;
+        }
+
+        private static FlowDocument BuildRestDocument(HttpRequest request, HttpResponse? response)
+        {
+            var doc = NewDocument();
+
+            var analysis = RestAnalyzer.Analyze(request.Url);
+            if (!analysis.IsRest)
+            {
+                doc.Blocks.Add(new Paragraph(new Run("(no REST request detected)")
+                { FontStyle = FontStyles.Italic }));
+                return doc;
+            }
+
+            AddSectionHeader(doc, "Request");
+            AddLine(doc, "Method", request.Method);
+            AddLine(doc, "URL", request.Url?.ToString() ?? string.Empty);
+            if (!string.IsNullOrEmpty(analysis.ApiVersion))
+                AddLine(doc, "API version", analysis.ApiVersion!);
+
+            var breakdownPara = new Paragraph { Margin = new Thickness(0, 6, 0, 6) };
+            breakdownPara.Inlines.Add(new Run("Resource path breakdown:") { FontWeight = FontWeights.Bold });
+            doc.Blocks.Add(breakdownPara);
+
+            var list = new List();
+            foreach (var segment in analysis.Segments)
+            {
+                var item = new ListItem();
+                var p = new Paragraph { Margin = new Thickness(0) };
+                p.Inlines.Add(new Run(segment.Collection) { FontWeight = FontWeights.Bold });
+                if (!string.IsNullOrEmpty(segment.Identifier))
+                {
+                    p.Inlines.Add(new Run(" -> "));
+                    p.Inlines.Add(new Run(segment.Identifier));
+                    if (segment.IdentifierIsWellKnown)
+                        p.Inlines.Add(new Run(" (well-known)") { FontStyle = FontStyles.Italic });
+                }
+                item.Blocks.Add(p);
+                list.ListItems.Add(item);
+            }
+            doc.Blocks.Add(list);
+
+            if (analysis.QueryParameters.Count > 0)
+            {
+                var queryPara = new Paragraph { Margin = new Thickness(0, 6, 0, 2) };
+                queryPara.Inlines.Add(new Run("Query parameters:") { FontWeight = FontWeights.Bold });
+                doc.Blocks.Add(queryPara);
+                foreach (var q in analysis.QueryParameters)
+                    AddLine(doc, q.Key, q.Value);
+            }
+
+            if (response is not null)
+            {
+                AddSectionHeader(doc, "Response");
+                var status = GetResponseStatus(response);
+                if (!string.IsNullOrEmpty(status))
+                    AddLine(doc, "Status", status);
+
+                var contentType = GetContentType(response.Headers);
+                if (!string.IsNullOrEmpty(contentType))
+                    AddLine(doc, "Content-Type", contentType);
+
+                if (response.Payload is { Length: > 0 })
+                {
+                    string text = DecodePayloadText(response.Payload, response.Headers);
+                    if (TryPrettyPrintJson(text, out var pretty))
+                        text = pretty;
+
+                    var bodyPara = new Paragraph
+                    {
+                        FontFamily = new FontFamily("Consolas"),
+                        Margin = new Thickness(0, 4, 0, 8),
+                    };
+                    bodyPara.Inlines.Add(new Run("Body:") { FontWeight = FontWeights.Bold });
+                    bodyPara.Inlines.Add(new LineBreak());
+                    bodyPara.Inlines.Add(new Run(text));
+                    doc.Blocks.Add(bodyPara);
+                }
+                else
+                {
+                    doc.Blocks.Add(new Paragraph(new Run("(no response body)") { FontStyle = FontStyles.Italic }));
+                }
+            }
+
+            return doc;
+        }
+
+        private static FlowDocument BuildSoapDocument(HttpRequest request, HttpResponse? response)
+        {
+            var doc = NewDocument();
+            doc.Blocks.Add(new Paragraph(new Run("SOAP analysis is not yet implemented.")
+            { FontStyle = FontStyles.Italic }));
             return doc;
         }
 
