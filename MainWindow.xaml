@@ -140,7 +140,7 @@
                         </Border>
 
                         <!-- View group -->
-                        <Border Style="{StaticResource RibbonGroupStyle}" BorderThickness="0">
+                        <Border Style="{StaticResource RibbonGroupStyle}">
                             <StackPanel Orientation="Vertical">
                                 <StackPanel Orientation="Horizontal">
                                     <ToggleButton x:Name="FilterButton" Content="Filter"
@@ -156,6 +156,20 @@
                                             Click="NextErrorButton_Click" />
                                 </StackPanel>
                                 <TextBlock Text="View" Style="{StaticResource RibbonGroupLabelStyle}" />
+                            </StackPanel>
+                        </Border>
+
+                        <!-- MCP Server group -->
+                        <Border Style="{StaticResource RibbonGroupStyle}" BorderThickness="0">
+                            <StackPanel Orientation="Vertical">
+                                <StackPanel Orientation="Horizontal">
+                                    <ToggleButton x:Name="McpServerButton" Content="Enable"
+                                                  Tag="&#xE8CD;"
+                                                  Style="{StaticResource RibbonToggleButtonStyle}"
+                                                  Checked="McpServerButton_Checked"
+                                                  Unchecked="McpServerButton_Unchecked" />
+                                </StackPanel>
+                                <TextBlock Text="MCP Server" Style="{StaticResource RibbonGroupLabelStyle}" />
                             </StackPanel>
                         </Border>
                     </StackPanel>

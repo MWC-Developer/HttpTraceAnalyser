@@ -3,7 +3,6 @@ using System.Configuration;
 using System.Data;
 using System.Threading.Tasks;
 using System.Windows;
-using Microsoft.Extensions.Hosting;
 
 namespace HttpTraceAnalyser
 {
@@ -12,8 +11,6 @@ namespace HttpTraceAnalyser
     /// </summary>
     public partial class App : Application
     {
-        private Task<IHost>? _mcpHostTask;
-
         protected override void OnStartup(StartupEventArgs e)
         {
             base.OnStartup(e);
@@ -23,8 +20,6 @@ namespace HttpTraceAnalyser
             AvalonEditHelper.DisableLinkDetectionGlobally();
 
             ThemeManager.Apply(ThemeManager.GetSystemTheme());
-
-            _mcpHostTask = McpHostManager.StartAsync();
         }
 
         protected override void OnExit(ExitEventArgs e)
@@ -32,22 +27,14 @@ namespace HttpTraceAnalyser
             // Run the shutdown off the UI thread and with ConfigureAwait(false): StopAsync's
             // internal continuations must not need to resume on the WPF dispatcher, which is
             // already tearing down at this point and would otherwise deadlock the call below.
-            if (_mcpHostTask is not null)
+            try
             {
-                try
-                {
-                    Task.Run(async () =>
-                    {
-                        var host = await _mcpHostTask.ConfigureAwait(false);
-                        await host.StopAsync(TimeSpan.FromSeconds(2)).ConfigureAwait(false);
-                        host.Dispose();
-                    }).Wait(TimeSpan.FromSeconds(5));
-                }
-                catch
-                {
-                    // Startup may have failed, already been torn down, or timed out;
-                    // fall through and force-exit the process regardless.
-                }
+                Task.Run(() => McpHostManager.StopAsync()).Wait(TimeSpan.FromSeconds(5));
+            }
+            catch
+            {
+                // Server may not have been running, or already been torn down/timed out;
+                // fall through and force-exit the process regardless.
             }
 
             base.OnExit(e);

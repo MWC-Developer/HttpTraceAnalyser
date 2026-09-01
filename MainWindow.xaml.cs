@@ -141,6 +141,47 @@ namespace HttpTraceAnalyser
                 ThemeManager.Apply(target);
         }
 
+        private async void McpServerButton_Checked(object sender, RoutedEventArgs e)
+        {
+            McpServerButton.IsEnabled = false;
+            try
+            {
+                await McpHostManager.StartAsync();
+                McpServerButton.Content = "Disable";
+                McpServerButton.Tag = "\uE8CE";
+            }
+            catch (Exception ex)
+            {
+                McpServerButton.IsChecked = false;
+                MessageBox.Show(this, $"Failed to start the MCP server:\n{ex.Message}",
+                    "MCP Server", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+            finally
+            {
+                McpServerButton.IsEnabled = true;
+            }
+        }
+
+        private async void McpServerButton_Unchecked(object sender, RoutedEventArgs e)
+        {
+            McpServerButton.IsEnabled = false;
+            try
+            {
+                await McpHostManager.StopAsync();
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(this, $"Failed to stop the MCP server cleanly:\n{ex.Message}",
+                    "MCP Server", MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
+            finally
+            {
+                McpServerButton.Content = "Enable";
+                McpServerButton.Tag = "\uE8CD";
+                McpServerButton.IsEnabled = true;
+            }
+        }
+
         private void OnThemeChanged(object? sender, EventArgs e)
         {
             DarkModeToggle.IsChecked = ThemeManager.Current == AppTheme.Dark;
