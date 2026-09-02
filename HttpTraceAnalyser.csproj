@@ -9,6 +9,7 @@
     <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
     <GenerateTargetFrameworkAttribute>false</GenerateTargetFrameworkAttribute>
     <ApplicationIcon>HttpTraceAnalyser.ico</ApplicationIcon>
+    <Title>HTTP Trace Analyser</Title>
   </PropertyGroup>
 
   <ItemGroup>
