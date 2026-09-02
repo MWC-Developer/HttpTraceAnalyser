@@ -51,12 +51,16 @@ Toggle the filter panel with the **Filter** toolbar button. Rules can be added/r
 
 ### Viewers
 
-Selecting a row populates four tabs:
+Selecting a row populates these tabs:
 
 - **Summary** — request/response metadata (method, URL, timestamp, payload size, status).
 - **Request** — headers on top, payload below, with a horizontal `GridSplitter`.
 - **Response** — same layout as Request.
+- **REST** — shown for requests recognised as REST API calls (e.g. Microsoft Graph style URLs, via `Model/RestAnalyzer.cs`): decomposed path segments, API version, and query parameters, plus a JSON tree view of the payload.
+- **SOAP** — shown for SOAP requests/responses (e.g. EWS calls, via `Model/SoapAnalyzer.cs`): decoded SOAP header entries (including anchor mailbox) and envelope summary.
 - **MAPI** — decoded MS-OXCMAPIHTTP metadata for traces of MAPI-over-HTTP traffic (protocol headers + response meta-tag stream + hex dump of the body). Full ROP decoding is out of scope; see [Office-Inspectors-for-Fiddler/MAPIInspector](https://github.com/OfficeDev/Office-Inspectors-for-Fiddler/tree/main/MAPIInspector) for a complete decoder.
+
+The REST and SOAP tabs are only shown when the request/response content is recognised as such; otherwise they're hidden.
 
 Layout rules for Request / Response:
 
@@ -181,8 +185,11 @@ HttpTraceAnalyser/
    ├─ SazTraceFile.cs          // Fiddler .saz loader
    ├─ HarTraceFile.cs          // HAR 1.2 loader
    ├─ EtlTraceFile.cs          // ETW .etl loader
+   ├─ EwsTraceFile.cs          // EWS .trace loader
    ├─ HighlightRule.cs         // row-highlighting rules
    ├─ FilterRule.cs            // DataView filter rules
+   ├─ RestAnalyzer.cs          // REST API URL analysis for the REST tab
+   ├─ SoapAnalyzer.cs          // SOAP envelope/header analysis for the SOAP tab
    └─ MapiHttpDecoder.cs       // minimal MAPI/HTTP decoder for the MAPI tab
 ```
 
@@ -194,4 +201,4 @@ HttpTraceAnalyser/
 
 ## License
 
-TBD.
+MIT License - see [LICENSE.txt](LICENSE.txt) for details.
