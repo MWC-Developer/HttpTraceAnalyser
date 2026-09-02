@@ -17,8 +17,11 @@ namespace HttpTraceAnalyser
     /// </summary>
     internal static class McpHostManager
     {
-        /// <summary>Port the MCP HTTP endpoint listens on. Bound to loopback only.</summary>
-        public const int Port = 5088;
+        /// <summary>Default port the MCP HTTP endpoint listens on.</summary>
+        public const int DefaultPort = 5088;
+
+        /// <summary>Port the MCP HTTP endpoint listens on. Bound to loopback only. Configurable via the Settings dialog before the server is started.</summary>
+        public static int Port { get; set; } = DefaultPort;
 
         private static IHost? _host;
 

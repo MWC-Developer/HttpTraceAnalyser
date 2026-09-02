@@ -168,6 +168,10 @@
                                                   Style="{StaticResource RibbonToggleButtonStyle}"
                                                   Checked="McpServerButton_Checked"
                                                   Unchecked="McpServerButton_Unchecked" />
+                                    <Button Content="Settings"
+                                            Tag="&#xE713;"
+                                            Style="{StaticResource RibbonButtonStyle}"
+                                            Click="McpSettingsButton_Click" />
                                 </StackPanel>
                                 <TextBlock Text="MCP Server" Style="{StaticResource RibbonGroupLabelStyle}" />
                             </StackPanel>

@@ -94,10 +94,10 @@ HttpTraceAnalyser can host an in-process [Model Context Protocol](https://modelc
 ### Enabling the server
 
 1. Open a trace and click **Enable** in the **MCP Server** ribbon group (rightmost group in the toolbar). The button switches to **Disable** once the server is listening.
-2. The server binds to `http://127.0.0.1:5088` (loopback only — it is not reachable from other machines).
+2. The server binds to `http://127.0.0.1:5088` by default (loopback only — it is not reachable from other machines).
 3. Click **Disable** (or close the app) to stop it. The server is also stopped automatically on application exit even if left enabled.
 
-The listening port is defined by `McpHostManager.Port` in [`McpHostManager.cs`](McpHostManager.cs) if you need to change it.
+Click **Settings** (cog icon) in the same ribbon group to change the listening port (the server must be disabled to apply a new port) and to view the GitHub Copilot CLI configuration snippet.
 
 ### Registering with GitHub Copilot CLI
 

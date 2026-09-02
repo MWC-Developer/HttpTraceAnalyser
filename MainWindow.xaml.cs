@@ -253,6 +253,12 @@ namespace HttpTraceAnalyser
             window.ShowDialog();
         }
 
+        private void McpSettingsButton_Click(object sender, RoutedEventArgs e)
+        {
+            var window = new McpSettingsWindow { Owner = this };
+            window.ShowDialog();
+        }
+
         /// <summary>
         /// Selects the row with the given <see cref="TraceDataSchema.Index"/> value in the trace grid,
         /// scrolls it into view, and brings the window to the foreground. Intended for external
