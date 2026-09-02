@@ -18,6 +18,13 @@ namespace HttpTraceAnalyser.Model
         Url,
         Date,
         Time,
+        Index,
+        ReasonPhrase,
+        Latency,
+        ContentType,
+        ClientRequestId,
+        SoapMethod,
+        XRequestId,
     }
 
     /// <summary>Comparison operator used by a <see cref="FilterRule"/>.</summary>
@@ -77,7 +84,7 @@ namespace HttpTraceAnalyser.Model
         internal string BuildExpression()
         {
             var column = Field.ToString();
-            var isNumeric = Field == FilterField.Response;
+            var isNumeric = Field is FilterField.Response or FilterField.Index or FilterField.Latency;
 
             switch (Comparator)
             {

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Data;
 using System.IO;
+using System.Linq;
 using System.Text;
 using System.Windows.Media;
 
@@ -33,6 +34,14 @@ namespace HttpTraceAnalyser.Model
         public const string Latency = nameof(Latency);
         public const string RowBackground = nameof(RowBackground);
         public const string RowForeground = nameof(RowForeground);
+
+        // Additional, extended fields. These are populated when the corresponding data is
+        // present in the trace but are not shown by default in the grid (available via the
+        // column header right-click menu).
+        public const string ContentType = nameof(ContentType);
+        public const string ClientRequestId = nameof(ClientRequestId);
+        public const string SoapMethod = nameof(SoapMethod);
+        public const string XRequestId = nameof(XRequestId);
     }
 
     /// <summary>
@@ -110,6 +119,10 @@ namespace HttpTraceAnalyser.Model
             cols.Add(TraceDataSchema.Latency, typeof(double));
             cols.Add(TraceDataSchema.RowBackground, typeof(Brush));
             cols.Add(TraceDataSchema.RowForeground, typeof(Brush));
+            cols.Add(TraceDataSchema.ContentType, typeof(string));
+            cols.Add(TraceDataSchema.ClientRequestId, typeof(string));
+            cols.Add(TraceDataSchema.SoapMethod, typeof(string));
+            cols.Add(TraceDataSchema.XRequestId, typeof(string));
             table.PrimaryKey = new[] { cols[TraceDataSchema.Index]! };
             return table;
         }
@@ -167,9 +180,41 @@ namespace HttpTraceAnalyser.Model
                 row[TraceDataSchema.ResponsePayload] = Array.Empty<byte>();
             }
 
+            row[TraceDataSchema.ContentType] = FindHeaderValue(request.Headers, "Content-Type")
+                ?? (response is not null ? FindHeaderValue(response.Headers, "Content-Type") : null)
+                ?? string.Empty;
+            row[TraceDataSchema.ClientRequestId] = FindHeaderValue(request.Headers, "client-request-id")
+                ?? (response is not null ? FindHeaderValue(response.Headers, "client-request-id") : null)
+                ?? string.Empty;
+            row[TraceDataSchema.XRequestId] = FindHeaderValue(request.Headers, "X-RequestId")
+                ?? (response is not null ? FindHeaderValue(response.Headers, "X-RequestId") : null)
+                ?? string.Empty;
+            row[TraceDataSchema.SoapMethod] = TryExtractSoapMethod(request.Payload, request.Headers) ?? string.Empty;
+
             ApplyHighlight(row);
             _messages.Rows.Add(row);
         }
+
+        /// <summary>Returns the first header value matching <paramref name="name"/> (case-insensitive), or null.</summary>
+        private static string? FindHeaderValue(IReadOnlyList<KeyValuePair<string, string>>? headers, string name)
+        {
+            if (headers is null)
+                return null;
+            foreach (var h in headers)
+            {
+                if (string.Equals(h.Key, name, StringComparison.OrdinalIgnoreCase))
+                    return h.Value;
+            }
+            return null;
+        }
+
+        /// <summary>
+        /// Attempts to extract the SOAP method (operation) name from a request payload. Works for
+        /// any SOAP-based trace, including EWS, since detection is based on the payload shape
+        /// (a SOAP &lt;Envelope&gt; root) rather than the trace file format.
+        /// </summary>
+        private static string? TryExtractSoapMethod(byte[]? payload, IReadOnlyList<KeyValuePair<string, string>>? headers)
+            => SoapAnalyzer.TryExtractMethod(payload, headers);
 
         /// <summary>Removes the row with the given <see cref="TraceDataSchema.Index"/> value.</summary>
         public bool RemoveByIndex(int index)

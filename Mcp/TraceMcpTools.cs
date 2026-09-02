@@ -37,9 +37,9 @@ namespace HttpTraceAnalyser.Mcp
             });
         }
 
-        [McpServerTool, Description("Searches the loaded HTTP trace for rows whose URL, host, path, or method contains the given text (case-insensitive) and returns a summary of matching rows.")]
+        [McpServerTool, Description("Searches the loaded HTTP trace for rows whose URL, host, path, method, content-type, client-request-id, SOAP method, or X-RequestId contains the given text (case-insensitive) and returns a summary of matching rows.")]
         public static string SearchTrace(
-            [Description("Text to search for within URL/host/path/method.")] string searchText,
+            [Description("Text to search for within URL/host/path/method/content-type/client-request-id/SOAP method/X-RequestId.")] string searchText,
             [Description("Maximum number of matching rows to return.")] int maxResults = 20)
         {
             var window = GetMainWindow();
@@ -60,7 +60,11 @@ namespace HttpTraceAnalyser.Mcp
                         RowContains(row, TraceDataSchema.Url, searchText) ||
                         RowContains(row, TraceDataSchema.Host, searchText) ||
                         RowContains(row, TraceDataSchema.Path, searchText) ||
-                        RowContains(row, TraceDataSchema.Method, searchText))
+                        RowContains(row, TraceDataSchema.Method, searchText) ||
+                        RowContains(row, TraceDataSchema.ContentType, searchText) ||
+                        RowContains(row, TraceDataSchema.ClientRequestId, searchText) ||
+                        RowContains(row, TraceDataSchema.SoapMethod, searchText) ||
+                        RowContains(row, TraceDataSchema.XRequestId, searchText))
                     .Take(maxResults)
                     .Select(row => $"#{row[TraceDataSchema.Index]} {row[TraceDataSchema.Method]} {row[TraceDataSchema.Url]} -> {(row[TraceDataSchema.Response] is int code ? code.ToString() : "(no response)")}")
                     .ToList();
@@ -74,7 +78,7 @@ namespace HttpTraceAnalyser.Mcp
         private static bool RowContains(DataRow row, string column, string searchText)
             => row[column] is string s && s.Contains(searchText, StringComparison.OrdinalIgnoreCase);
 
-        [McpServerTool, Description("Adds a highlight rule that colors matching rows in the trace grid. Column values: Response, Method, Host, Path, Url, Date, Time. Operator values: Equals, NotEquals, Contains, StartsWith, Regex, Range (value formatted as 'min-max').")]
+        [McpServerTool, Description("Adds a highlight rule that colors matching rows in the trace grid. Column values: Index, Response, ReasonPhrase, Method, Host, Path, Url, Date, Time, Latency, ContentType, ClientRequestId, SoapMethod, XRequestId. Operator values: Equals, NotEquals, Contains, StartsWith, Regex, Range (value formatted as 'min-max').")]
         public static string HighlightTrace(
             [Description("Column to match against.")] HighlightColumn column,
             [Description("Comparison operator.")] HighlightOperator @operator,
@@ -139,7 +143,7 @@ namespace HttpTraceAnalyser.Mcp
             });
         }
 
-        [McpServerTool, Description("Adds a filter rule restricting which rows are visible in the trace grid. Field values: Response, Method, Host, Path, Url, Date, Time. Comparator values: Equals, NotEquals, Contains, StartsWith, Range (value formatted as 'min-max'). Combinator (And/Or) determines how this rule combines with previously added rules.")]
+        [McpServerTool, Description("Adds a filter rule restricting which rows are visible in the trace grid. Field values: Index, Response, ReasonPhrase, Method, Host, Path, Url, Date, Time, Latency, ContentType, ClientRequestId, SoapMethod, XRequestId. Comparator values: Equals, NotEquals, Contains, StartsWith, Range (value formatted as 'min-max'). Combinator (And/Or) determines how this rule combines with previously added rules.")]
         public static string FilterTrace(
             [Description("Field to match against.")] FilterField field,
             [Description("Comparison operator.")] FilterComparator comparator,
@@ -189,7 +193,7 @@ namespace HttpTraceAnalyser.Mcp
             return window.Dispatcher.Invoke(() => window.SelectTraceRow(index));
         }
 
-        [McpServerTool, Description("Finds the first row across the whole loaded trace (ignoring any active filter) matching the given field/comparator/value, selects it, and shows it in the request/response viewers. Field values: Response, Method, Host, Path, Url, Date, Time. Comparator values: Equals, NotEquals, Contains, StartsWith, Range (value formatted as 'min-max'). Useful for e.g. jumping straight to the first row with a specific error status code.")]
+        [McpServerTool, Description("Finds the first row across the whole loaded trace (ignoring any active filter) matching the given field/comparator/value, selects it, and shows it in the request/response viewers. Field values: Index, Response, ReasonPhrase, Method, Host, Path, Url, Date, Time, Latency, ContentType, ClientRequestId, SoapMethod, XRequestId. Comparator values: Equals, NotEquals, Contains, StartsWith, Range (value formatted as 'min-max'). Useful for e.g. jumping straight to the first row with a specific error status code.")]
         public static string FindAndSelectTraceRow(
             [Description("Field to match against.")] FilterField field,
             [Description("Comparison operator.")] FilterComparator comparator,

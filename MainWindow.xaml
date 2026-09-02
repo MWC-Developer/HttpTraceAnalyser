@@ -382,6 +382,19 @@
                                           Tag="{x:Reference LatencyColumn}"
                                           Checked="ColumnVisibility_Changed" Unchecked="ColumnVisibility_Changed" />
                                 <Separator />
+                                <MenuItem Header="Content-Type" IsCheckable="True" IsChecked="False"
+                                          Tag="{x:Reference ContentTypeColumn}"
+                                          Checked="ColumnVisibility_Changed" Unchecked="ColumnVisibility_Changed" />
+                                <MenuItem Header="Client-Request-Id" IsCheckable="True" IsChecked="False"
+                                          Tag="{x:Reference ClientRequestIdColumn}"
+                                          Checked="ColumnVisibility_Changed" Unchecked="ColumnVisibility_Changed" />
+                                <MenuItem Header="SOAP Method" IsCheckable="True" IsChecked="False"
+                                          Tag="{x:Reference SoapMethodColumn}"
+                                          Checked="ColumnVisibility_Changed" Unchecked="ColumnVisibility_Changed" />
+                                <MenuItem Header="X-RequestId" IsCheckable="True" IsChecked="False"
+                                          Tag="{x:Reference XRequestIdColumn}"
+                                          Checked="ColumnVisibility_Changed" Unchecked="ColumnVisibility_Changed" />
+                                <Separator />
                                 <MenuItem Header="Auto-size Columns" Click="AutoSizeColumns_Click" />
                             </ContextMenu>
                         </GridView.ColumnHeaderContextMenu>
@@ -401,6 +414,14 @@
                                         DisplayMemberBinding="{Binding Host}" />
                         <GridViewColumn x:Name="PathColumn" Header="Path" Width="240"
                                         DisplayMemberBinding="{Binding Path}" />
+                        <GridViewColumn x:Name="ContentTypeColumn" Header="Content-Type" Width="0"
+                                        DisplayMemberBinding="{Binding ContentType}" />
+                        <GridViewColumn x:Name="ClientRequestIdColumn" Header="Client-Request-Id" Width="0"
+                                        DisplayMemberBinding="{Binding ClientRequestId}" />
+                        <GridViewColumn x:Name="SoapMethodColumn" Header="SOAP Method" Width="0"
+                                        DisplayMemberBinding="{Binding SoapMethod}" />
+                        <GridViewColumn x:Name="XRequestIdColumn" Header="X-RequestId" Width="0"
+                                        DisplayMemberBinding="{Binding XRequestId}" />
                     </GridView>
                 </ListView.View>
             </ListView>

@@ -648,6 +648,7 @@ namespace HttpTraceAnalyser
 
             PopulateList();
             ClearViewers();
+            MainTabControl.SelectedIndex = 0; // Return to Summary tab when a new trace is loaded
             Title = _trace is null
                 ? "HTTP Trace Analyser"
                 : $"HTTP Trace Analyser - {Path.GetFileName(path)}";
@@ -944,6 +945,10 @@ namespace HttpTraceAnalyser
         {
             return MainTabControl.SelectedIndex == 2; // Response is the third tab (index 2)
         }
+
+        private const int RestTabIndex = 3;
+        private const int SoapTabIndex = 4;
+        private const int MapiTabIndex = 5;
 
         private async void RequestList_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
@@ -1628,7 +1633,7 @@ namespace HttpTraceAnalyser
                 sb.Append(h.Key).Append(": ").AppendLine(h.Value);
         }
 
-        private static FlowDocument BuildSummary(HttpRequest request, HttpResponse? response)
+        private FlowDocument BuildSummary(HttpRequest request, HttpResponse? response)
         {
             var doc = NewDocument();
 
@@ -1650,7 +1655,57 @@ namespace HttpTraceAnalyser
                 AddLine(doc, "Payload size", response.Payload.Length + " byte(s)");
             }
 
+            AppendContentTypeSummary(doc, request, response);
+
             return doc;
+        }
+
+        /// <summary>
+        /// Appends a "Detected Content" line to the summary identifying any recognised protocol
+        /// content (REST, SOAP, MAPI) found in the request/response, each rendered as a
+        /// clickable link that switches the main tab control to the corresponding viewer tab.
+        /// </summary>
+        private void AppendContentTypeSummary(FlowDocument doc, HttpRequest request, HttpResponse? response)
+        {
+            var detected = new List<(string Label, int TabIndex)>();
+
+            if (IsRestContent(request, response, out _))
+                detected.Add(("REST", RestTabIndex));
+
+            if (SoapAnalyzer.AnalyzeRequest(request).IsSoap || SoapAnalyzer.AnalyzeResponse(response).IsSoap)
+                detected.Add(("SOAP", SoapTabIndex));
+
+            if (MapiHttpDecoder.IsMapiHttp(request) || MapiHttpDecoder.IsMapiHttp(response))
+                detected.Add(("MAPI", MapiTabIndex));
+
+            if (detected.Count == 0)
+                return;
+
+            AddSectionHeader(doc, "Detected Content");
+            var para = new Paragraph { Margin = new Thickness(0) };
+            for (int i = 0; i < detected.Count; i++)
+            {
+                if (i > 0)
+                    para.Inlines.Add(new Run(", "));
+
+                var (label, tabIndex) = detected[i];
+                var link = new Hyperlink(new Run(label))
+                {
+                    TextDecorations = TextDecorations.Underline,
+                    Cursor = System.Windows.Input.Cursors.Hand,
+                    Focusable = true,
+                };
+                link.Click += (_, _) => MainTabControl.SelectedIndex = tabIndex;
+                // RichTextBox (even IsReadOnly) intercepts mouse-up for selection handling before
+                // Hyperlink.Click reliably fires, so also switch tabs on mouse-down as a fallback.
+                link.PreviewMouseLeftButtonDown += (_, args) =>
+                {
+                    MainTabControl.SelectedIndex = tabIndex;
+                    args.Handled = true;
+                };
+                para.Inlines.Add(link);
+            }
+            doc.Blocks.Add(para);
         }
 
         private static void AddStatusLine(FlowDocument doc, HttpResponse response)
@@ -1722,10 +1777,9 @@ namespace HttpTraceAnalyser
         {
             var doc = NewDocument();
 
-            var analysis = RestAnalyzer.Analyze(request.Url);
-            if (!analysis.IsRest)
+            if (!IsRestContent(request, response, out var analysis))
             {
-                doc.Blocks.Add(new Paragraph(new Run("(no REST request detected)")
+                doc.Blocks.Add(new Paragraph(new Run("(no REST content detected)")
                 { FontStyle = FontStyles.Italic }));
                 return doc;
             }
@@ -1803,12 +1857,184 @@ namespace HttpTraceAnalyser
             return doc;
         }
 
+        /// <summary>
+        /// Determines whether the given request/response pair should be treated as REST content
+        /// for the REST tab / summary content-type detection. Requires the URL to look
+        /// resource-path-like AND the payload to actually look like JSON (or be empty), and
+        /// excludes anything that parses as a SOAP envelope.
+        /// </summary>
+        private static bool IsRestContent(HttpRequest request, HttpResponse? response, out RestAnalysisResult analysis)
+        {
+            analysis = RestAnalyzer.Analyze(request.Url);
+            bool looksLikeRestUrl = analysis.IsRest;
+            bool isSoap = SoapAnalyzer.AnalyzeRequest(request).IsSoap || SoapAnalyzer.AnalyzeResponse(response).IsSoap;
+
+            // The URL-based heuristic in RestAnalyzer can false-positive on non-REST endpoints
+            // whose path happens to look segment-like (e.g. SOAP's /EWS/Exchange.asmx). Guard
+            // against that by requiring the content to actually look like a REST (JSON) payload
+            // and not a SOAP envelope.
+            bool contentLooksJson = PayloadLooksLikeJson(request.Payload, request.Headers) ||
+                (response is not null && PayloadLooksLikeJson(response.Payload, response.Headers));
+            bool contentTypeSuggestsNonJson =
+                ContentTypeSuggestsNonJson(request.Headers) ||
+                (response is not null && ContentTypeSuggestsNonJson(response.Headers));
+
+            return looksLikeRestUrl && !isSoap && !contentTypeSuggestsNonJson &&
+                (contentLooksJson || (request.Payload is not { Length: > 0 } && response?.Payload is not { Length: > 0 }));
+        }
+
+        /// <summary>Returns true if the Content-Type header indicates a non-JSON, non-REST body (e.g. SOAP/XML).</summary>
+        private static bool ContentTypeSuggestsNonJson(IReadOnlyList<KeyValuePair<string, string>>? headers)
+        {
+            var contentType = GetContentType(headers);
+            if (string.IsNullOrEmpty(contentType))
+                return false;
+            return contentType.Contains("xml", StringComparison.OrdinalIgnoreCase) ||
+                   contentType.Contains("soap", StringComparison.OrdinalIgnoreCase);
+        }
+
+        /// <summary>Cheaply checks whether a payload looks like a JSON document (object or array).</summary>
+        private static bool PayloadLooksLikeJson(byte[]? payload, IReadOnlyList<KeyValuePair<string, string>>? headers)
+        {
+            if (payload is null || payload.Length == 0)
+                return false;
+
+            var contentType = GetContentType(headers);
+            if (!string.IsNullOrEmpty(contentType) && !contentType.Contains("json", StringComparison.OrdinalIgnoreCase))
+            {
+                // An explicit non-JSON content-type (xml, soap, text, etc.) rules this out.
+                if (contentType.Contains("xml", StringComparison.OrdinalIgnoreCase) ||
+                    contentType.Contains("soap", StringComparison.OrdinalIgnoreCase))
+                    return false;
+            }
+
+            var text = DecodePayloadText(payload, headers).TrimStart();
+            if (text.Length == 0 || (text[0] != '{' && text[0] != '['))
+                return false;
+
+            try
+            {
+                using var _ = JsonDocument.Parse(text);
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
         private static FlowDocument BuildSoapDocument(HttpRequest request, HttpResponse? response)
         {
             var doc = NewDocument();
-            doc.Blocks.Add(new Paragraph(new Run("SOAP analysis is not yet implemented.")
-            { FontStyle = FontStyles.Italic }));
+
+            var requestAnalysis = SoapAnalyzer.AnalyzeRequest(request);
+            var responseAnalysis = SoapAnalyzer.AnalyzeResponse(response);
+
+            if (!requestAnalysis.IsSoap && !responseAnalysis.IsSoap)
+            {
+                doc.Blocks.Add(new Paragraph(new Run("(no SOAP content detected)")
+                { FontStyle = FontStyles.Italic }));
+                return doc;
+            }
+
+            AddSectionHeader(doc, "Request");
+            AddLine(doc, "Method", string.IsNullOrEmpty(requestAnalysis.Method) ? "(unknown)" : requestAnalysis.Method);
+
+            var anchorMailbox = requestAnalysis.AnchorMailbox;
+            if (!string.IsNullOrEmpty(anchorMailbox))
+                AddLine(doc, "X-AnchorMailbox", anchorMailbox);
+
+            if (requestAnalysis.Headers.Count > 0)
+            {
+                var headersPara = new Paragraph { Margin = new Thickness(0, 6, 0, 2) };
+                headersPara.Inlines.Add(new Run("SOAP headers:") { FontWeight = FontWeights.Bold });
+                doc.Blocks.Add(headersPara);
+                foreach (var h in requestAnalysis.Headers)
+                    AddLine(doc, h.Name, h.Value);
+            }
+            else
+            {
+                doc.Blocks.Add(new Paragraph(new Run("(no SOAP headers)") { FontStyle = FontStyles.Italic }));
+            }
+
+            if (response is not null)
+            {
+                AddSectionHeader(doc, "Response");
+                var status = GetResponseStatus(response);
+                if (!string.IsNullOrEmpty(status))
+                    AddLine(doc, "Status", status);
+
+                if (responseAnalysis.IsSoap)
+                {
+                    if (responseAnalysis.IsFault)
+                    {
+                        // Note: SOAP services (including EWS) commonly return HTTP 200 even when
+                        // the SOAP body describes an error, so surface the fault prominently here
+                        // regardless of the HTTP status above.
+                        var faultPara = new Paragraph { Margin = new Thickness(0, 4, 0, 4) };
+                        faultPara.Inlines.Add(new Run("SOAP Fault") { FontWeight = FontWeights.Bold, Foreground = Brushes.Firebrick });
+                        doc.Blocks.Add(faultPara);
+                        if (!string.IsNullOrEmpty(responseAnalysis.FaultCode))
+                            AddLine(doc, "Fault code", responseAnalysis.FaultCode);
+                        if (!string.IsNullOrEmpty(responseAnalysis.FaultReason))
+                            AddLine(doc, "Fault reason", responseAnalysis.FaultReason);
+                    }
+                    else
+                    {
+                        AppendSoapResponseOverview(doc, responseAnalysis);
+                    }
+                }
+                else
+                {
+                    doc.Blocks.Add(new Paragraph(new Run("(response payload is not a SOAP envelope)")
+                    { FontStyle = FontStyles.Italic }));
+                }
+            }
+
             return doc;
+        }
+
+        /// <summary>Appends a human-readable overview of the SOAP response (e.g. folder/item details returned).</summary>
+        private static void AppendSoapResponseOverview(FlowDocument doc, SoapResponseAnalysis analysis)
+        {
+            if (analysis.Messages.Count == 0)
+            {
+                doc.Blocks.Add(new Paragraph(new Run("SOAP response indicates success (no Fault element).")
+                { FontStyle = FontStyles.Italic }));
+                return;
+            }
+
+            foreach (var message in analysis.Messages)
+            {
+                var summaryPara = new Paragraph { Margin = new Thickness(0, 4, 0, 4) };
+                var responseClass = message.ResponseClass ?? "(unknown)";
+                var isSuccess = string.Equals(message.ResponseClass, "Success", StringComparison.OrdinalIgnoreCase);
+                summaryPara.Inlines.Add(new Run($"Result: {responseClass}")
+                {
+                    FontWeight = FontWeights.Bold,
+                    Foreground = isSuccess ? Brushes.SeaGreen : Brushes.DarkOrange,
+                });
+                if (!string.IsNullOrEmpty(message.ResponseCode))
+                    summaryPara.Inlines.Add(new Run($"  ({message.ResponseCode})"));
+                doc.Blocks.Add(summaryPara);
+
+                if (message.Entries.Count == 0)
+                {
+                    doc.Blocks.Add(new Paragraph(new Run("(no items returned)") { FontStyle = FontStyles.Italic })
+                    { Margin = new Thickness(0, 0, 0, 6) });
+                    continue;
+                }
+
+                foreach (var entry in message.Entries)
+                {
+                    var titlePara = new Paragraph { Margin = new Thickness(0, 2, 0, 2) };
+                    titlePara.Inlines.Add(new Run(entry.Title) { FontWeight = FontWeights.Bold, TextDecorations = TextDecorations.Underline });
+                    doc.Blocks.Add(titlePara);
+
+                    foreach (var prop in entry.Properties)
+                        AddLine(doc, prop.Key, prop.Value);
+                }
+            }
         }
 
         private static void AppendMapiSection(FlowDocument doc, string title, MapiDecodeResult decoded, byte[] payload)

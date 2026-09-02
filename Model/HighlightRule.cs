@@ -19,6 +19,13 @@ namespace HttpTraceAnalyser.Model
         Url,
         Date,
         Time,
+        Index,
+        ReasonPhrase,
+        Latency,
+        ContentType,
+        ClientRequestId,
+        SoapMethod,
+        XRequestId,
     }
 
     public enum HighlightOperator
