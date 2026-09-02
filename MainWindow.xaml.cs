@@ -805,6 +805,8 @@ namespace HttpTraceAnalyser
             ApplyRichTextBoxWrap(MapiViewer, _mapiWrap);
             RestViewer.Document = new FlowDocument();
             ApplyRichTextBoxWrap(RestViewer, _restWrap);
+            RestJsonTree.ItemsSource = null;
+            RestJsonTree.Visibility = Visibility.Collapsed;
             SoapViewer.Document = new FlowDocument();
             ApplyRichTextBoxWrap(SoapViewer, _soapWrap);
 
@@ -981,8 +983,19 @@ namespace HttpTraceAnalyser
                 await PopulateResponseViewer(response);
                 MapiViewer.Document = BuildMapiDocument(request, response);
                 ApplyRichTextBoxWrap(MapiViewer, _mapiWrap);
-                RestViewer.Document = BuildRestDocument(request, response);
+                var (restDoc, restJsonRoots) = BuildRestDocument(request, response);
+                RestViewer.Document = restDoc;
                 ApplyRichTextBoxWrap(RestViewer, _restWrap);
+                if (restJsonRoots is { Count: > 0 })
+                {
+                    RestJsonTree.ItemsSource = restJsonRoots;
+                    RestJsonTree.Visibility = Visibility.Visible;
+                }
+                else
+                {
+                    RestJsonTree.ItemsSource = null;
+                    RestJsonTree.Visibility = Visibility.Collapsed;
+                }
                 SoapViewer.Document = BuildSoapDocument(request, response);
                 ApplyRichTextBoxWrap(SoapViewer, _soapWrap);
             }
@@ -1773,7 +1786,7 @@ namespace HttpTraceAnalyser
             return doc;
         }
 
-        private static FlowDocument BuildRestDocument(HttpRequest request, HttpResponse? response)
+        private static (FlowDocument Document, List<JsonTreeNode>? JsonRoots) BuildRestDocument(HttpRequest request, HttpResponse? response)
         {
             var doc = NewDocument();
 
@@ -1781,7 +1794,7 @@ namespace HttpTraceAnalyser
             {
                 doc.Blocks.Add(new Paragraph(new Run("(no REST content detected)")
                 { FontStyle = FontStyles.Italic }));
-                return doc;
+                return (doc, null);
             }
 
             AddSectionHeader(doc, "Request");
@@ -1821,6 +1834,8 @@ namespace HttpTraceAnalyser
                     AddLine(doc, q.Key, q.Value);
             }
 
+            List<JsonTreeNode>? jsonRoots = null;
+
             if (response is not null)
             {
                 AddSectionHeader(doc, "Response");
@@ -1835,18 +1850,30 @@ namespace HttpTraceAnalyser
                 if (response.Payload is { Length: > 0 })
                 {
                     string text = DecodePayloadText(response.Payload, response.Headers);
-                    if (TryPrettyPrintJson(text, out var pretty))
-                        text = pretty;
 
-                    var bodyPara = new Paragraph
+                    jsonRoots = TryBuildJsonTree(text);
+                    if (jsonRoots is not null)
                     {
-                        FontFamily = new FontFamily("Consolas"),
-                        Margin = new Thickness(0, 4, 0, 8),
-                    };
-                    bodyPara.Inlines.Add(new Run("Body:") { FontWeight = FontWeights.Bold });
-                    bodyPara.Inlines.Add(new LineBreak());
-                    bodyPara.Inlines.Add(new Run(text));
-                    doc.Blocks.Add(bodyPara);
+                        var fieldsPara = new Paragraph { Margin = new Thickness(0, 6, 0, 2) };
+                        fieldsPara.Inlines.Add(new Run("Response fields:") { FontWeight = FontWeights.Bold });
+                        doc.Blocks.Add(fieldsPara);
+                        doc.Blocks.Add(new Paragraph(new Run("(see expandable tree below)") { FontStyle = FontStyles.Italic }));
+                    }
+                    else
+                    {
+                        if (TryPrettyPrintJson(text, out var pretty))
+                            text = pretty;
+
+                        var bodyPara = new Paragraph
+                        {
+                            FontFamily = new FontFamily("Consolas"),
+                            Margin = new Thickness(0, 4, 0, 8),
+                        };
+                        bodyPara.Inlines.Add(new Run("Body:") { FontWeight = FontWeights.Bold });
+                        bodyPara.Inlines.Add(new LineBreak());
+                        bodyPara.Inlines.Add(new Run(text));
+                        doc.Blocks.Add(bodyPara);
+                    }
                 }
                 else
                 {
@@ -1854,8 +1881,106 @@ namespace HttpTraceAnalyser
                 }
             }
 
-            return doc;
+            return (doc, jsonRoots);
         }
+
+        /// <summary>
+        /// Attempts to parse the given text as JSON and build a tree of <see cref="JsonTreeNode"/>
+        /// for display in the REST tab's collapsible <see cref="TreeView"/>. Returns null if the
+        /// text is not valid JSON, in which case the caller should fall back to the raw body.
+        /// </summary>
+        private static List<JsonTreeNode>? TryBuildJsonTree(string text)
+        {
+            text = text.TrimStart();
+            if (text.Length == 0 || (text[0] != '{' && text[0] != '['))
+                return null;
+
+            JsonDocument jsonDoc;
+            try
+            {
+                jsonDoc = JsonDocument.Parse(text);
+            }
+            catch
+            {
+                return null;
+            }
+
+            using (jsonDoc)
+            {
+                var roots = new List<JsonTreeNode>();
+                BuildJsonTreeNode(roots, jsonDoc.RootElement, null, isRoot: true);
+                return roots;
+            }
+        }
+
+        /// <summary>
+        /// Recursively converts a JSON element into <see cref="JsonTreeNode"/> entries, labelling
+        /// each field with its name (when part of an object) and formatting scalar values inline.
+        /// Arrays are rendered as indexed nested nodes; objects as nested nodes of "name: value"
+        /// entries. The top level of an array/object is expanded by default for immediate visibility.
+        /// </summary>
+        private static void BuildJsonTreeNode(List<JsonTreeNode> nodes, JsonElement element, string? name, bool isRoot = false)
+        {
+            switch (element.ValueKind)
+            {
+                case JsonValueKind.Object:
+                    {
+                        var properties = element.EnumerateObject().ToList();
+                        if (properties.Count == 0)
+                        {
+                            nodes.Add(new JsonTreeNode(FormatLabel(name, "{ }")));
+                            break;
+                        }
+
+                        if (name is null)
+                        {
+                            foreach (var prop in properties)
+                                BuildJsonTreeNode(nodes, prop.Value, prop.Name, isRoot);
+                        }
+                        else
+                        {
+                            var node = new JsonTreeNode(name, isRoot);
+                            foreach (var prop in properties)
+                                BuildJsonTreeNode(node.Children, prop.Value, prop.Name);
+                            nodes.Add(node);
+                        }
+                        break;
+                    }
+
+                case JsonValueKind.Array:
+                    {
+                        var arrayItems = element.EnumerateArray().ToList();
+                        if (arrayItems.Count == 0)
+                        {
+                            nodes.Add(new JsonTreeNode(FormatLabel(name, "[ ]")));
+                            break;
+                        }
+
+                        var node = new JsonTreeNode($"{name ?? "Array"} [{arrayItems.Count}]", isRoot);
+                        for (int i = 0; i < arrayItems.Count; i++)
+                            BuildJsonTreeNode(node.Children, arrayItems[i], $"[{i}]");
+                        nodes.Add(node);
+                        break;
+                    }
+
+                default:
+                    nodes.Add(new JsonTreeNode(FormatLabel(name, FormatJsonScalar(element))));
+                    break;
+            }
+        }
+
+        private static string FormatLabel(string? name, string value)
+            => string.IsNullOrEmpty(name) ? value : $"{name}: {value}";
+
+        private static string FormatJsonScalar(JsonElement element) => element.ValueKind switch
+        {
+            JsonValueKind.String => element.GetString() ?? string.Empty,
+            JsonValueKind.Number => element.GetRawText(),
+            JsonValueKind.True => "true",
+            JsonValueKind.False => "false",
+            JsonValueKind.Null => "(null)",
+            _ => element.GetRawText(),
+        };
 
         /// <summary>
         /// Determines whether the given request/response pair should be treated as REST content

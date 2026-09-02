@@ -623,20 +623,45 @@
                     </Grid>
                 </TabItem>
                 <TabItem Header="REST">
-                    <RichTextBox x:Name="RestViewer" IsReadOnly="True"
-                                 VerticalScrollBarVisibility="Auto"
-                                 HorizontalScrollBarVisibility="Auto"
-                                 FontFamily="Consolas">
-                        <RichTextBox.ContextMenu>
-                            <ContextMenu>
-                                <MenuItem Command="ApplicationCommands.Copy" />
-                                <MenuItem Command="ApplicationCommands.SelectAll" />
-                                <Separator />
-                                <MenuItem Header="Word wrap" IsCheckable="True" IsChecked="True"
-                                          Click="WordWrap_Toggled" />
-                            </ContextMenu>
-                        </RichTextBox.ContextMenu>
-                    </RichTextBox>
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" MaxHeight="300" />
+                            <RowDefinition Height="*" />
+                        </Grid.RowDefinitions>
+                        <RichTextBox x:Name="RestViewer" Grid.Row="0" IsReadOnly="True"
+                                     VerticalScrollBarVisibility="Auto"
+                                     HorizontalScrollBarVisibility="Auto"
+                                     FontFamily="Consolas">
+                            <RichTextBox.ContextMenu>
+                                <ContextMenu>
+                                    <MenuItem Command="ApplicationCommands.Copy" />
+                                    <MenuItem Command="ApplicationCommands.SelectAll" />
+                                    <Separator />
+                                    <MenuItem Header="Word wrap" IsCheckable="True" IsChecked="True"
+                                              Click="WordWrap_Toggled" />
+                                </ContextMenu>
+                            </RichTextBox.ContextMenu>
+                        </RichTextBox>
+                        <TreeView x:Name="RestJsonTree" Grid.Row="1"
+                                  Visibility="Collapsed"
+                                  ItemsSource="{Binding}"
+                                  Background="{DynamicResource ApplicationBackgroundBrush}"
+                                  Foreground="{DynamicResource TextFillColorPrimaryBrush}"
+                                  BorderThickness="0">
+                            <TreeView.ItemContainerStyle>
+                                <Style TargetType="TreeViewItem">
+                                    <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=OneTime}" />
+                                    <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}" />
+                                </Style>
+                            </TreeView.ItemContainerStyle>
+                            <TreeView.ItemTemplate>
+                                <HierarchicalDataTemplate ItemsSource="{Binding Children}">
+                                    <TextBlock Text="{Binding DisplayText}" FontFamily="Consolas"
+                                               Foreground="{DynamicResource TextFillColorPrimaryBrush}" />
+                                </HierarchicalDataTemplate>
+                            </TreeView.ItemTemplate>
+                        </TreeView>
+                    </Grid>
                 </TabItem>
                 <TabItem Header="SOAP">
                     <RichTextBox x:Name="SoapViewer" IsReadOnly="True"
