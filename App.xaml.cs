@@ -19,6 +19,10 @@ namespace HttpTraceAnalyser
             // regex catastrophic backtracking that causes UI hangs on large files
             AvalonEditHelper.DisableLinkDetectionGlobally();
 
+            // Discover and load additional trace parser plugins (see Model/Extensibility)
+            // before any trace file is opened, so their loaders/extended fields are registered.
+            Model.Extensibility.PluginManager.LoadPlugins();
+
             ThemeManager.Apply(ThemeManager.GetSystemTheme());
         }
 

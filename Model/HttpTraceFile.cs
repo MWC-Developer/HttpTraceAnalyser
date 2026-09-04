@@ -5,6 +5,7 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using System.Windows.Media;
+using HttpTraceAnalyser.Model.Extensibility;
 
 namespace HttpTraceAnalyser.Model
 {
@@ -70,13 +71,44 @@ namespace HttpTraceAnalyser.Model
         private const char HeaderPairDelimiter = '\u001F';   // unit separator
         private const char HeaderRecordDelimiter = '\u001E'; // record separator
 
+        // Extended fields registered by plugins (see PluginManager). Keyed by field name.
+        // Applied to every trace's schema on construction, and populated per-row in AddRow.
+        private static readonly Dictionary<string, ExtendedFieldDefinition> ExtendedFieldsByName =
+            new(StringComparer.OrdinalIgnoreCase);
+
         private readonly DataTable _messages;
 
         protected HttpTraceFile(string filePath)
         {
             FilePath = filePath;
             _messages = CreateSchema();
+            foreach (var field in ExtendedFieldsByName.Values)
+                _messages.Columns.Add(field.Name, field.FieldType);
         }
+
+        /// <summary>
+        /// Registers an additional field contributed by a plugin. The field becomes a new
+        /// column on every subsequently constructed trace's <see cref="Messages"/> table and
+        /// is populated for each row via <paramref name="field"/>'s extractor. Field names
+        /// must not collide with the built-in <see cref="TraceDataSchema"/> columns or with
+        /// another registered extended field.
+        /// </summary>
+        public static void RegisterExtendedField(ExtendedFieldDefinition field)
+        {
+            if (field is null)
+                throw new ArgumentNullException(nameof(field));
+            if (typeof(TraceDataSchema).GetFields().Any(f => string.Equals((string?)f.GetRawConstantValue(), field.Name, StringComparison.OrdinalIgnoreCase)))
+                throw new InvalidOperationException($"Extended field name '{field.Name}' collides with a built-in column.");
+            if (!ExtendedFieldsByName.TryAdd(field.Name, field))
+                throw new InvalidOperationException($"Extended field '{field.Name}' is already registered.");
+        }
+
+        /// <summary>Names of all currently registered extended (plugin-contributed) fields.</summary>
+        public static IReadOnlyCollection<string> ExtendedFieldNames => ExtendedFieldsByName.Keys;
+
+        /// <summary>Display name for a registered extended field, or the field name itself if not found.</summary>
+        public static string GetExtendedFieldDisplayName(string name)
+            => ExtendedFieldsByName.TryGetValue(name, out var field) ? field.DisplayName : name;
 
         public string FilePath { get; }
 
@@ -190,6 +222,20 @@ namespace HttpTraceAnalyser.Model
                 ?? (response is not null ? FindHeaderValue(response.Headers, "X-RequestId") : null)
                 ?? string.Empty;
             row[TraceDataSchema.SoapMethod] = TryExtractSoapMethod(request.Payload, request.Headers) ?? string.Empty;
+
+            foreach (var field in ExtendedFieldsByName.Values)
+            {
+                object? value = null;
+                try
+                {
+                    value = field.Extractor(request, response);
+                }
+                catch
+                {
+                    // A misbehaving plugin extractor must not prevent the row from being added.
+                }
+                row[field.Name] = value ?? DBNull.Value;
+            }
 
             ApplyHighlight(row);
             _messages.Rows.Add(row);

@@ -84,6 +84,16 @@ namespace HttpTraceAnalyser
         {
             InitializeComponent();
 
+            // Add grid columns + column-chooser entries for any fields contributed by
+            // plugins loaded during App.OnStartup (see Model/Extensibility/PluginManager).
+            AddExtendedFieldColumns();
+
+            // Show which extended (plugin) parsers were loaded/failed on the Summary tab
+            // as soon as the window opens, before any trace file is loaded.
+            _loaderSummary = BuildPluginSummary();
+            SummaryViewer.Document = _loaderSummary ?? new FlowDocument();
+            ApplyRichTextBoxWrap(SummaryViewer, _summaryWrap);
+
             // Disable link detection after controls are loaded to prevent regex performance issues.
             // This is a redundant safety measure in addition to the global handler in App.OnStartup.
             Loaded += (_, _) => DisableLinkDetection();
@@ -525,6 +535,54 @@ namespace HttpTraceAnalyser
             }
         }
 
+        /// <summary>
+        /// Adds a hidden (Width=0) <see cref="GridViewColumn"/> and matching column-chooser
+        /// <see cref="MenuItem"/> for every extended field registered by a plugin (see
+        /// <see cref="HttpTraceFile.ExtendedFieldNames"/>). Called once from the constructor,
+        /// after plugins have already been loaded during App startup.
+        /// </summary>
+        private void AddExtendedFieldColumns()
+        {
+            var names = HttpTraceFile.ExtendedFieldNames;
+            if (names.Count == 0)
+                return;
+
+            if (RequestList.View is not GridView gridView)
+                return;
+
+            var contextMenu = gridView.ColumnHeaderContextMenu;
+
+            foreach (var name in names)
+            {
+                var displayName = HttpTraceFile.GetExtendedFieldDisplayName(name);
+
+                var gridColumn = new GridViewColumn
+                {
+                    Header = displayName,
+                    Width = 0,
+                    DisplayMemberBinding = new System.Windows.Data.Binding(name),
+                };
+                gridView.Columns.Add(gridColumn);
+
+                if (contextMenu is not null)
+                {
+                    var menuItem = new MenuItem
+                    {
+                        Header = displayName,
+                        IsCheckable = true,
+                        IsChecked = false,
+                        Tag = gridColumn,
+                    };
+                    menuItem.Checked += ColumnVisibility_Changed;
+                    menuItem.Unchecked += ColumnVisibility_Changed;
+
+                    // Insert before the trailing "Auto-size Columns" item/separator, if present.
+                    int insertIndex = contextMenu.Items.Count;
+                    contextMenu.Items.Insert(insertIndex, menuItem);
+                }
+            }
+        }
+
         private void AutoSizeColumns_Click(object sender, RoutedEventArgs e)
         {
             AutoSizeGridViewColumns();
@@ -675,6 +733,61 @@ namespace HttpTraceAnalyser
             OpenFileButton.IsEnabled = !busy;
         }
 
+        /// <summary>
+        /// Builds a summary section listing any extended (plugin) trace parsers that were
+        /// loaded, and any that failed to load, from the "Plugins" folder (see
+        /// <see cref="Model.Extensibility.PluginManager"/>). Returns null if no plugins were
+        /// discovered at all (nothing to report).
+        /// </summary>
+        private static FlowDocument? BuildPluginSummary()
+        {
+            var plugins = Model.Extensibility.PluginManager.Plugins;
+            var failures = Model.Extensibility.PluginManager.FailedPlugins;
+
+            if (plugins.Count == 0 && failures.Count == 0)
+                return null;
+
+            var doc = NewDocument();
+            AddSectionHeader(doc, "Extended parsers");
+
+            if (plugins.Count > 0)
+            {
+                foreach (var plugin in plugins)
+                    AddLine(doc, plugin.Name, string.Join(", ", plugin.SupportedExtensions));
+            }
+            else
+            {
+                AddLine(doc, "Loaded", "(none)");
+            }
+
+            if (failures.Count > 0)
+            {
+                AddSectionHeader(doc, "Extended parsers - failed to load");
+                foreach (var failure in failures)
+                    AddLine(doc, failure.Source, failure.Error);
+            }
+
+            return doc;
+        }
+
+        /// <summary>
+        /// Appends the plugin summary section (see <see cref="BuildPluginSummary"/>) to an
+        /// existing document, if there is anything to report.
+        /// </summary>
+        private static void AppendPluginSummary(FlowDocument doc)
+        {
+            var pluginDoc = BuildPluginSummary();
+            if (pluginDoc is null)
+                return;
+
+            var blocks = pluginDoc.Blocks.ToList();
+            foreach (var block in blocks)
+            {
+                pluginDoc.Blocks.Remove(block);
+                doc.Blocks.Add(block);
+            }
+        }
+
         private static FlowDocument? BuildLoaderSummary(HttpTraceFile trace)
         {
             var counts = trace.ProviderEventCounts;
@@ -682,9 +795,10 @@ namespace HttpTraceAnalyser
             bool hasRows = trace.Count > 0;
 
             if (!hasProviderCounts && !hasRows)
-                return null;
+                return BuildPluginSummary();
 
             var doc = NewDocument();
+            AppendPluginSummary(doc);
             AddSectionHeader(doc, "Trace summary");
             AddLine(doc, "File", Path.GetFileName(trace.FilePath));
             AddLine(doc, "Rows extracted", trace.Count.ToString());

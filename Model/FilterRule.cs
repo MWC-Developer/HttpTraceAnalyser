@@ -25,6 +25,11 @@ namespace HttpTraceAnalyser.Model
         ClientRequestId,
         SoapMethod,
         XRequestId,
+        /// <summary>
+        /// A plugin-contributed extended field. The actual column name is held in
+        /// <see cref="FilterRule.CustomFieldName"/> (see <see cref="HttpTraceFile.ExtendedFieldNames"/>).
+        /// </summary>
+        Custom,
     }
 
     /// <summary>Comparison operator used by a <see cref="FilterRule"/>.</summary>
@@ -52,6 +57,7 @@ namespace HttpTraceAnalyser.Model
         private FilterField _field = FilterField.Response;
         private FilterComparator _comparator = FilterComparator.Equals;
         private string _value = string.Empty;
+        private string _customFieldName = string.Empty;
 
         public FilterCombinator Combinator
         {
@@ -63,6 +69,17 @@ namespace HttpTraceAnalyser.Model
         {
             get => _field;
             set => Set(ref _field, value);
+        }
+
+        /// <summary>
+        /// Name of the plugin-contributed extended field to filter on, used when
+        /// <see cref="Field"/> is <see cref="FilterField.Custom"/>. Must match a name in
+        /// <see cref="HttpTraceFile.ExtendedFieldNames"/>.
+        /// </summary>
+        public string CustomFieldName
+        {
+            get => _customFieldName;
+            set => Set(ref _customFieldName, value ?? string.Empty);
         }
 
         public FilterComparator Comparator
@@ -83,7 +100,9 @@ namespace HttpTraceAnalyser.Model
         /// </summary>
         internal string BuildExpression()
         {
-            var column = Field.ToString();
+            var column = Field == FilterField.Custom ? CustomFieldName : Field.ToString();
+            if (string.IsNullOrEmpty(column))
+                return string.Empty;
             var isNumeric = Field is FilterField.Response or FilterField.Index or FilterField.Latency;
 
             switch (Comparator)

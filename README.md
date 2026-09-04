@@ -195,9 +195,74 @@ HttpTraceAnalyser/
 
 ## Extensibility notes
 
-- **Add a new trace format**: subclass `HttpTraceFile`, populate rows via `AddRow(request, response)`, register with `HttpTraceFile.RegisterLoader(".ext", ...)`.
+- **Add a new trace format (in-repo)**: subclass `HttpTraceFile`, populate rows via `AddRow(request, response)`, register with `HttpTraceFile.RegisterLoader(".ext", ...)`.
 - **Add a payload format**: extend the `PayloadFormat` enum in `MainWindow.xaml.cs`, add a `ComboBoxItem`, extend `DetectPayloadFormat` and `RenderPayload`.
 - **Add a highlight/filter column**: add the value to `HighlightColumn` / `FilterField`, ensure the `DataTable` schema has a matching column name (see `TraceDataSchema`).
+
+## Plugins (external trace parsers)
+
+Additional trace format parsers can be shipped as separate DLLs and loaded at runtime,
+without modifying or forking this repository.
+
+### How it works
+
+- At startup (`App.xaml.cs` → `OnStartup`), `Model.Extensibility.PluginManager.LoadPlugins()`
+  scans a `Plugins` folder next to the application executable (created automatically if it
+  doesn't exist) for `*.dll` files.
+- Each DLL is loaded into its own isolated, collectible `AssemblyLoadContext` so a broken or
+  conflicting plugin can't destabilize the host. Types shared with the host assembly
+  (`HttpTraceFile`, `HttpMessage`, etc.) still resolve to the exact same types used by the
+  host, so `is`/`as` checks and calls into `HttpTraceFile` work as expected.
+- Every public, parameterless-constructible type implementing
+  `Model.Extensibility.ITraceParserPlugin` is instantiated and registered:
+  - its `SupportedExtensions` are wired into `HttpTraceFile.RegisterLoader`, and
+  - its `ExtendedFields` are wired into `HttpTraceFile.RegisterExtendedField`, adding new
+    columns to the trace grid automatically available in the filter panel
+    (`FilterField.Custom` + `CustomFieldName`) and the highlight rule editor
+    (`HighlightColumn.Custom` + `CustomFieldName`), plus a grid column added on startup by
+    `MainWindow.AddExtendedFieldColumns()`.
+- A plugin that fails to load, instantiate, or register is skipped (logged via
+  `Debug.WriteLine`) without affecting the rest of the app or other plugins.
+
+### Writing a plugin
+
+Reference `HttpTraceAnalyser.exe` from a class library project, then implement the
+contract in `Model/Extensibility/ITraceParserPlugin.cs`:
+
+```csharp
+using HttpTraceAnalyser.Model;
+using HttpTraceAnalyser.Model.Extensibility;
+
+public sealed class MyTraceParserPlugin : ITraceParserPlugin
+{
+    public string Name => "My Trace Parser";
+
+    public IReadOnlyList<string> SupportedExtensions { get; } = new[] { ".mytrace" };
+
+    public bool CanLoad(string filePath) => /* sniff file contents, if needed */ true;
+
+    public HttpTraceFile Load(string filePath) => new MyTraceFile(filePath);
+
+    // Similar to the built-in fields (ClientRequestId, SoapMethod, ...): extra columns
+    // extracted from each request/response pair and shown in the grid.
+    public IReadOnlyList<ExtendedFieldDefinition> ExtendedFields { get; } = new[]
+    {
+        new ExtendedFieldDefinition(
+            name: "MyCustomField",
+            displayName: "My Custom Field",
+            fieldType: typeof(string),
+            extractor: (request, response) =>
+                request.Headers.FirstOrDefault(h => h.Key == "X-My-Header").Value),
+    };
+}
+
+// MyTraceFile : HttpTraceFile — parses the format and calls AddRow(request, response)
+// per correlated request/response pair, exactly like the built-in loaders (e.g. EtlTraceFile).
+```
+
+Build the plugin project and copy its output DLL (and any dependencies not already present
+in the host, resolved automatically via `AssemblyDependencyResolver`) into the `Plugins`
+folder next to `HttpTraceAnalyser.exe`.
 
 ## License
 

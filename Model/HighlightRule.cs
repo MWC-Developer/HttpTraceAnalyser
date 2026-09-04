@@ -26,6 +26,11 @@ namespace HttpTraceAnalyser.Model
         ClientRequestId,
         SoapMethod,
         XRequestId,
+        /// <summary>
+        /// A plugin-contributed extended field. The actual column name is held in
+        /// <see cref="HighlightRule.CustomFieldName"/> (see <see cref="HttpTraceFile.ExtendedFieldNames"/>).
+        /// </summary>
+        Custom,
     }
 
     public enum HighlightOperator
@@ -48,6 +53,7 @@ namespace HttpTraceAnalyser.Model
         private HighlightColumn _column = HighlightColumn.Response;
         private HighlightOperator _operator = HighlightOperator.Equals;
         private string _value = string.Empty;
+        private string _customFieldName = string.Empty;
         private Color _backgroundColor = Colors.Transparent;
         private Color? _foregroundColor;
 
@@ -73,6 +79,17 @@ namespace HttpTraceAnalyser.Model
         {
             get => _value;
             set => Set(ref _value, value ?? string.Empty);
+        }
+
+        /// <summary>
+        /// Name of the plugin-contributed extended field to highlight on, used when
+        /// <see cref="Column"/> is <see cref="HighlightColumn.Custom"/>. Must match a name in
+        /// <see cref="HttpTraceFile.ExtendedFieldNames"/>.
+        /// </summary>
+        public string CustomFieldName
+        {
+            get => _customFieldName;
+            set => Set(ref _customFieldName, value ?? string.Empty);
         }
 
         public Color BackgroundColor
@@ -224,7 +241,7 @@ namespace HttpTraceAnalyser.Model
                 if (!rule.IsEnabled)
                     continue;
 
-                var value = GetColumnValue(item, rule.Column);
+                var value = GetColumnValue(item, rule);
                 if (rule.Matches(value))
                     return rule;
             }
@@ -253,9 +270,11 @@ namespace HttpTraceAnalyser.Model
             return brush;
         }
 
-        private static object? GetColumnValue(object item, HighlightColumn column)
+        private static object? GetColumnValue(object item, HighlightRule rule)
         {
-            var name = column.ToString();
+            var name = rule.Column == HighlightColumn.Custom ? rule.CustomFieldName : rule.Column.ToString();
+            if (string.IsNullOrEmpty(name))
+                return null;
 
             switch (item)
             {
