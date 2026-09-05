@@ -81,6 +81,10 @@ namespace HttpTraceAnalyser
         // Track if we're populating viewers to suppress format change events
         private bool _isPopulatingViewers;
 
+        private bool _isSplitView;
+        private GridLength _sessionsLeftWidth = new(900);
+        private GridLength _sessionsTopHeight = new(2, GridUnitType.Star);
+
         public MainWindow()
         {
             InitializeComponent();
@@ -103,6 +107,7 @@ namespace HttpTraceAnalyser
             FilterRuleSet.FiltersChanged += OnFilterRulesChanged;
             ActiveFiltersList.ItemsSource = FilterRuleSet.Rules;
             DarkModeToggle.IsChecked = ThemeManager.Current == AppTheme.Dark;
+            ViewLayoutCombo.SelectedIndex = 0;
             ThemeManager.ThemeChanged += OnThemeChanged;
             Closed += (_, _) =>
             {
@@ -738,6 +743,104 @@ namespace HttpTraceAnalyser
             window.ShowDialog();
         }
 
+        private async void ViewLayoutCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            bool useSplitView = ViewLayoutCombo.SelectedIndex == 1;
+            if (_isSplitView == useSplitView)
+                return;
+
+            if (useSplitView)
+            {
+                _sessionsLeftWidth = SessionsColumn.Width;
+
+                RequestTab.Content = null;
+                ResponseTab.Content = null;
+                SplitRequestHost.Content = RequestViewerGrid;
+                SplitResponseHost.Content = ResponseViewerGrid;
+                MoveTabContent(SummaryTab, TopSummaryTab);
+                MoveTabContent(RestTab, TopRestTab);
+                MoveTabContent(SoapTab, TopSoapTab);
+                MoveTabContent(MapiTab, TopMapiTab);
+
+                SessionsColumn.MinWidth = 0;
+                SessionsColumn.Width = new GridLength(1, GridUnitType.Star);
+                VerticalSplitterColumn.Width = new GridLength(0);
+                TabbedDetailsColumn.MinWidth = 0;
+                TabbedDetailsColumn.Width = new GridLength(0);
+
+                SessionsPane.SetValue(Grid.ColumnSpanProperty, 3);
+                SessionsRow.Height = _sessionsTopHeight;
+                HorizontalSplitterRow.Height = new GridLength(4);
+                SplitDetailsRow.Height = new GridLength(3, GridUnitType.Star);
+
+                VerticalWorkspaceSplitter.Visibility = Visibility.Collapsed;
+                MainTabControl.Visibility = Visibility.Collapsed;
+                HorizontalWorkspaceSplitter.Visibility = Visibility.Visible;
+                TopLayoutTabControl.Visibility = Visibility.Visible;
+                RequestViewerGrid.Visibility = Visibility.Visible;
+                ResponseViewerGrid.Visibility = Visibility.Visible;
+                _requestTabEverActivated = true;
+                _responseTabEverActivated = true;
+                _isSplitView = true;
+
+                await Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.Render);
+                AutoSizeGridViewColumns();
+                await RenderVisibleSplitPayloads();
+            }
+            else
+            {
+                _sessionsTopHeight = SessionsRow.Height;
+
+                SplitRequestHost.Content = null;
+                SplitResponseHost.Content = null;
+                RequestTab.Content = RequestViewerGrid;
+                ResponseTab.Content = ResponseViewerGrid;
+                MoveTabContent(TopSummaryTab, SummaryTab);
+                MoveTabContent(TopRestTab, RestTab);
+                MoveTabContent(TopSoapTab, SoapTab);
+                MoveTabContent(TopMapiTab, MapiTab);
+
+                SessionsPane.ClearValue(Grid.ColumnSpanProperty);
+                SessionsColumn.MinWidth = 400;
+                SessionsColumn.Width = _sessionsLeftWidth;
+                VerticalSplitterColumn.Width = GridLength.Auto;
+                TabbedDetailsColumn.MinWidth = 300;
+                TabbedDetailsColumn.Width = new GridLength(1, GridUnitType.Star);
+
+                SessionsRow.Height = new GridLength(1, GridUnitType.Star);
+                HorizontalSplitterRow.Height = new GridLength(0);
+                SplitDetailsRow.Height = new GridLength(0);
+
+                TopLayoutTabControl.Visibility = Visibility.Collapsed;
+                HorizontalWorkspaceSplitter.Visibility = Visibility.Collapsed;
+                VerticalWorkspaceSplitter.Visibility = Visibility.Visible;
+                MainTabControl.Visibility = Visibility.Visible;
+                _isSplitView = false;
+            }
+        }
+
+        private static void MoveTabContent(TabItem source, TabItem destination)
+        {
+            var content = source.Content;
+            source.Content = null;
+            destination.Content = content;
+        }
+
+        private async Task RenderVisibleSplitPayloads()
+        {
+            if (_requestPayloadNeedsRender)
+            {
+                _requestPayloadNeedsRender = false;
+                await RenderRequestPayload(_pendingRequestFormat, showBusyIndicator: true);
+            }
+
+            if (_responsePayloadNeedsRender)
+            {
+                _responsePayloadNeedsRender = false;
+                await RenderResponsePayload(_pendingResponseFormat, showBusyIndicator: true);
+            }
+        }
+
         /// <summary>
         /// Selects the row with the given <see cref="TraceDataSchema.Index"/> value in the trace grid,
         /// scrolls it into view, and brings the window to the foreground. Intended for external
@@ -986,6 +1089,8 @@ namespace HttpTraceAnalyser
         {
             if (sender is not MenuItem item || item.Tag is not GridViewColumn column)
                 return;
+            if (RequestList.View is not GridView gridView)
+                return;
 
             const double DefaultWidth = 200;
 
@@ -995,17 +1100,38 @@ namespace HttpTraceAnalyser
                     ? saved
                     : DefaultWidth;
                 column.Width = width;
+                if (!gridView.Columns.Contains(column))
+                    gridView.Columns.Insert(GetColumnInsertionIndex(gridView, column), column);
             }
             else
             {
                 if (column.Width > 0)
                     _savedColumnWidths[column] = column.Width;
-                column.Width = 0;
+                gridView.Columns.Remove(column);
             }
         }
 
+        private static int GetColumnInsertionIndex(GridView gridView, GridViewColumn targetColumn)
+        {
+            if (gridView.ColumnHeaderContextMenu is not ContextMenu contextMenu)
+                return gridView.Columns.Count;
+
+            int insertionIndex = 0;
+            foreach (var menuItem in contextMenu.Items.OfType<MenuItem>())
+            {
+                if (menuItem.Tag is not GridViewColumn menuColumn)
+                    continue;
+                if (menuColumn == targetColumn)
+                    return insertionIndex;
+                if (gridView.Columns.Contains(menuColumn))
+                    insertionIndex++;
+            }
+
+            return gridView.Columns.Count;
+        }
+
         /// <summary>
-        /// Adds a hidden (Width=0) <see cref="GridViewColumn"/> and matching column-chooser
+        /// Adds a hidden <see cref="GridViewColumn"/> and matching column-chooser
         /// <see cref="MenuItem"/> for every extended field registered by a plugin (see
         /// <see cref="HttpTraceFile.ExtendedFieldNames"/>). Called once from the constructor,
         /// after plugins have already been loaded during App startup.
@@ -1028,10 +1154,9 @@ namespace HttpTraceAnalyser
                 var gridColumn = new GridViewColumn
                 {
                     Header = displayName,
-                    Width = 0,
+                    Width = 200,
                     DisplayMemberBinding = new System.Windows.Data.Binding(name),
                 };
-                gridView.Columns.Add(gridColumn);
 
                 if (contextMenu is not null)
                 {
@@ -1089,45 +1214,75 @@ namespace HttpTraceAnalyser
             // Calculate available width (account for scrollbar, arrow indicator, padding)
             const double ScrollbarWidth = 20;
             const double ArrowIndicatorWidth = 24;
-            const double SafetyMargin = 40;
 
-            double availableWidth = RequestList.ActualWidth - ScrollbarWidth - ArrowIndicatorWidth - SafetyMargin;
+            double availableWidth = RequestList.ActualWidth - ScrollbarWidth - ArrowIndicatorWidth;
 
             // Ensure we have a reasonable available width
             if (availableWidth < 300)
                 availableWidth = 800; // Fallback if ListView hasn't been sized yet
 
-            // Calculate total measured width with per-column max limits
+            // Keep compact fields at their measured width. If the content is wider than
+            // the viewport, distribute space above each header's minimum in proportion to demand.
             const double MinWidth = 50;
-            const double MaxWidth = 300;  // Further reduced to ensure all columns fit
             const double Padding = 8;
 
-            // Apply max width cap to measurements
-            var cappedMeasurements = columnMeasurements
-                .Select(cm => (cm.Column, Width: Math.Min(cm.MeasuredWidth, MaxWidth)))
+            var desiredMeasurements = columnMeasurements
+                .Select(cm =>
+                {
+                    double minimumWidth = Math.Max(MinWidth, MeasureColumnHeaderWidth(cm.Column));
+                    double desiredWidth = Math.Max(minimumWidth, cm.MeasuredWidth + Padding);
+                    return (cm.Column, MinimumWidth: minimumWidth, DesiredWidth: desiredWidth);
+                })
                 .ToList();
 
-            double totalWidth = cappedMeasurements.Sum(cm => cm.Width) + Padding * cappedMeasurements.Count;
+            double totalDesiredWidth = desiredMeasurements.Sum(cm => cm.DesiredWidth);
 
-            if (totalWidth <= availableWidth)
+            if (totalDesiredWidth <= availableWidth)
             {
-                // All columns fit - use capped widths with padding
-                foreach (var (column, width) in cappedMeasurements)
-                {
-                    column.Width = Math.Clamp(width + Padding, MinWidth, MaxWidth);
-                }
+                foreach (var (column, _, desiredWidth) in desiredMeasurements)
+                    column.Width = desiredWidth;
+
+                // Keep compact columns content-sized and let the final visible column
+                // consume the remaining viewport width.
+                var lastColumn = desiredMeasurements[^1].Column;
+                lastColumn.Width += availableWidth - totalDesiredWidth;
             }
             else
             {
-                // Need to scale down - distribute available width proportionally
-                double scale = availableWidth / totalWidth;
-
-                foreach (var (column, width) in cappedMeasurements)
+                double minimumTotal = desiredMeasurements.Sum(cm => cm.MinimumWidth);
+                if (minimumTotal >= availableWidth)
                 {
-                    double targetWidth = (width + Padding) * scale;
-                    column.Width = Math.Clamp(targetWidth, MinWidth, MaxWidth);
+                    foreach (var (column, minimumWidth, _) in desiredMeasurements)
+                        column.Width = minimumWidth;
+                    return;
+                }
+
+                double remainingWidth = availableWidth;
+                double remainingMinimum = minimumTotal;
+                foreach (var (column, minimumWidth, desiredWidth) in desiredMeasurements)
+                {
+                    remainingMinimum -= minimumWidth;
+                    double availableForColumn = remainingWidth - remainingMinimum;
+                    column.Width = Math.Min(desiredWidth, Math.Max(minimumWidth, availableForColumn));
+                    remainingWidth -= column.Width;
                 }
             }
+        }
+
+        private double MeasureColumnHeaderWidth(GridViewColumn column)
+        {
+            var header = new GridViewColumnHeader
+            {
+                Content = column.Header,
+                FontFamily = RequestList.FontFamily,
+                FontSize = RequestList.FontSize,
+                FontStretch = RequestList.FontStretch,
+                FontStyle = RequestList.FontStyle,
+                FontWeight = FontWeights.SemiBold,
+                Padding = new Thickness(6, 2, 6, 2),
+            };
+            header.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+            return Math.Ceiling(header.DesiredSize.Width);
         }
 
         private async void OpenFileButton_Click(object sender, RoutedEventArgs e)
@@ -1181,7 +1336,10 @@ namespace HttpTraceAnalyser
 
             PopulateList();
             ClearViewers();
-            MainTabControl.SelectedIndex = 0; // Return to Summary tab when a new trace is loaded
+            if (_isSplitView)
+                TopLayoutTabControl.SelectedIndex = 0;
+            else
+                MainTabControl.SelectedIndex = 0;
             Title = _trace is null
                 ? "HTTP Trace Analyser"
                 : $"HTTP Trace Analyser - {Path.GetFileName(path)}";
@@ -1529,12 +1687,12 @@ namespace HttpTraceAnalyser
 
         private bool IsRequestTabSelected()
         {
-            return MainTabControl.SelectedIndex == 1; // Request is the second tab (index 1)
+            return _isSplitView || MainTabControl.SelectedIndex == 1; // Request is the second tab (index 1)
         }
 
         private bool IsResponseTabSelected()
         {
-            return MainTabControl.SelectedIndex == 2; // Response is the third tab (index 2)
+            return _isSplitView || MainTabControl.SelectedIndex == 2; // Response is the third tab (index 2)
         }
 
         private const int RestTabIndex = 3;
@@ -2297,17 +2455,25 @@ namespace HttpTraceAnalyser
                     Cursor = System.Windows.Input.Cursors.Hand,
                     Focusable = true,
                 };
-                link.Click += (_, _) => MainTabControl.SelectedIndex = tabIndex;
+                link.Click += (_, _) => SelectAnalysisTab(tabIndex);
                 // RichTextBox (even IsReadOnly) intercepts mouse-up for selection handling before
                 // Hyperlink.Click reliably fires, so also switch tabs on mouse-down as a fallback.
                 link.PreviewMouseLeftButtonDown += (_, args) =>
                 {
-                    MainTabControl.SelectedIndex = tabIndex;
+                    SelectAnalysisTab(tabIndex);
                     args.Handled = true;
                 };
                 para.Inlines.Add(link);
             }
             doc.Blocks.Add(para);
+        }
+
+        private void SelectAnalysisTab(int mainTabIndex)
+        {
+            if (_isSplitView)
+                TopLayoutTabControl.SelectedIndex = mainTabIndex - 1;
+            else
+                MainTabControl.SelectedIndex = mainTabIndex;
         }
 
         private static void AddStatusLine(FlowDocument doc, HttpResponse response)

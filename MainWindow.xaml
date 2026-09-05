@@ -161,6 +161,13 @@
                                             Tag="&#xE74B;"
                                             Style="{StaticResource RibbonButtonStyle}"
                                             Click="NextErrorButton_Click" />
+                                    <ComboBox x:Name="ViewLayoutCombo"
+                                              Width="150" Margin="6,2,2,2"
+                                              VerticalAlignment="Center"
+                                              SelectionChanged="ViewLayoutCombo_SelectionChanged">
+                                        <ComboBoxItem Content="Sessions left" />
+                                        <ComboBoxItem Content="Sessions top" />
+                                    </ComboBox>
                                 </StackPanel>
                                 <TextBlock Text="View" Style="{StaticResource RibbonGroupLabelStyle}" />
                             </StackPanel>
@@ -187,14 +194,19 @@
                 </DockPanel>
             </Border>
 
-        <Grid>
+        <Grid x:Name="WorkspaceGrid">
+            <Grid.RowDefinitions>
+                <RowDefinition x:Name="SessionsRow" Height="*" MinHeight="0" />
+                <RowDefinition x:Name="HorizontalSplitterRow" Height="0" />
+                <RowDefinition x:Name="SplitDetailsRow" Height="0" MinHeight="0" />
+            </Grid.RowDefinitions>
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="900" MinWidth="400" />
-                <ColumnDefinition Width="Auto" />
-                <ColumnDefinition Width="*" MinWidth="300" />
+                <ColumnDefinition x:Name="SessionsColumn" Width="900" MinWidth="400" />
+                <ColumnDefinition x:Name="VerticalSplitterColumn" Width="Auto" />
+                <ColumnDefinition x:Name="TabbedDetailsColumn" Width="*" MinWidth="300" />
             </Grid.ColumnDefinitions>
 
-            <Grid Grid.Column="0">
+            <Grid x:Name="SessionsPane" Grid.Row="0" Grid.Column="0">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="Auto" />
@@ -317,22 +329,6 @@
                     <Style TargetType="GridViewColumnHeader">
                         <Setter Property="Padding" Value="6,2" />
                     </Style>
-                    <!-- Style for the selection arrow indicator -->
-                    <Style x:Key="SelectionArrow" TargetType="TextBlock">
-                        <Setter Property="Text" Value="" />
-                        <Setter Property="FontSize" Value="14" />
-                        <Setter Property="FontWeight" Value="Bold" />
-                        <Setter Property="Foreground" Value="{DynamicResource AccentFillColorDefaultBrush}" />
-                        <Setter Property="VerticalAlignment" Value="Center" />
-                        <Setter Property="Margin" Value="2,0,4,0" />
-                        <Setter Property="Visibility" Value="Hidden" />
-                        <Style.Triggers>
-                            <DataTrigger Binding="{Binding IsSelected, RelativeSource={RelativeSource AncestorType=ListViewItem}}" Value="True">
-                                <Setter Property="Text" Value="▶" />
-                                <Setter Property="Visibility" Value="Visible" />
-                            </DataTrigger>
-                        </Style.Triggers>
-                    </Style>
                 </ListView.Resources>
                 <ListView.ItemContainerStyle>
                     <Style TargetType="ListViewItem" BasedOn="{StaticResource {x:Static GridView.GridViewItemContainerStyleKey}}">
@@ -359,27 +355,14 @@
                                         BorderBrush="Transparent"
                                         BorderThickness="1"
                                         Margin="0,0,14,0">
-                                        <Grid>
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="Auto" />
-                                                <ColumnDefinition Width="*" />
-                                            </Grid.ColumnDefinitions>
-
-                                            <!-- Selection arrow indicator -->
-                                            <TextBlock Grid.Column="0" Style="{StaticResource SelectionArrow}" />
-
-                                            <!-- Content -->
-                                            <GridViewRowPresenter Grid.Column="1"
-                                                                  Content="{TemplateBinding Content}"
-                                                                  Columns="{TemplateBinding GridView.ColumnCollection}"
-                                                                  Margin="0" />
-                                        </Grid>
+                                    <GridViewRowPresenter Content="{TemplateBinding Content}"
+                                                          Columns="{TemplateBinding GridView.ColumnCollection}"
+                                                          Margin="0" />
                                     </Border>
                                     <ControlTemplate.Triggers>
                                         <Trigger Property="IsSelected" Value="True">
-                                            <Setter Property="FontWeight" Value="SemiBold" />
                                             <Setter TargetName="SelectionBorder" Property="BorderBrush" Value="{DynamicResource AccentFillColorDefaultBrush}" />
-                                            <Setter TargetName="SelectionBorder" Property="BorderThickness" Value="2" />
+                                            <Setter TargetName="SelectionBorder" Property="Background" Value="{DynamicResource ControlFillColorSecondaryBrush}" />
                                         </Trigger>
                                     </ControlTemplate.Triggers>
                                 </ControlTemplate>
@@ -408,8 +391,12 @@
                         <GridView.ColumnHeaderContextMenu>
                             <ContextMenu>
                                 <MenuItem Header="Date" IsCheckable="True" IsChecked="False"
-                                          Tag="{x:Reference DateColumn}"
-                                          Checked="ColumnVisibility_Changed" Unchecked="ColumnVisibility_Changed" />
+                                          Checked="ColumnVisibility_Changed" Unchecked="ColumnVisibility_Changed">
+                                    <MenuItem.Tag>
+                                        <GridViewColumn Header="Date" Width="200"
+                                                        DisplayMemberBinding="{Binding Date}" />
+                                    </MenuItem.Tag>
+                                </MenuItem>
                                 <MenuItem Header="Time" IsCheckable="True" IsChecked="True"
                                           Tag="{x:Reference TimeColumn}"
                                           Checked="ColumnVisibility_Changed" Unchecked="ColumnVisibility_Changed" />
@@ -420,8 +407,12 @@
                                           Tag="{x:Reference ResponseColumn}"
                                           Checked="ColumnVisibility_Changed" Unchecked="ColumnVisibility_Changed" />
                                 <MenuItem Header="URL" IsCheckable="True" IsChecked="False"
-                                          Tag="{x:Reference UrlColumn}"
-                                          Checked="ColumnVisibility_Changed" Unchecked="ColumnVisibility_Changed" />
+                                          Checked="ColumnVisibility_Changed" Unchecked="ColumnVisibility_Changed">
+                                    <MenuItem.Tag>
+                                        <GridViewColumn Header="URL" Width="200"
+                                                        DisplayMemberBinding="{Binding Url}" />
+                                    </MenuItem.Tag>
+                                </MenuItem>
                                 <MenuItem Header="Host" IsCheckable="True" IsChecked="True"
                                           Tag="{x:Reference HostColumn}"
                                           Checked="ColumnVisibility_Changed" Unchecked="ColumnVisibility_Changed" />
@@ -433,23 +424,37 @@
                                           Checked="ColumnVisibility_Changed" Unchecked="ColumnVisibility_Changed" />
                                 <Separator />
                                 <MenuItem Header="Content-Type" IsCheckable="True" IsChecked="False"
-                                          Tag="{x:Reference ContentTypeColumn}"
-                                          Checked="ColumnVisibility_Changed" Unchecked="ColumnVisibility_Changed" />
+                                          Checked="ColumnVisibility_Changed" Unchecked="ColumnVisibility_Changed">
+                                    <MenuItem.Tag>
+                                        <GridViewColumn Header="Content-Type" Width="200"
+                                                        DisplayMemberBinding="{Binding ContentType}" />
+                                    </MenuItem.Tag>
+                                </MenuItem>
                                 <MenuItem Header="Client-Request-Id" IsCheckable="True" IsChecked="False"
-                                          Tag="{x:Reference ClientRequestIdColumn}"
-                                          Checked="ColumnVisibility_Changed" Unchecked="ColumnVisibility_Changed" />
+                                          Checked="ColumnVisibility_Changed" Unchecked="ColumnVisibility_Changed">
+                                    <MenuItem.Tag>
+                                        <GridViewColumn Header="Client-Request-Id" Width="200"
+                                                        DisplayMemberBinding="{Binding ClientRequestId}" />
+                                    </MenuItem.Tag>
+                                </MenuItem>
                                 <MenuItem Header="SOAP Method" IsCheckable="True" IsChecked="False"
-                                          Tag="{x:Reference SoapMethodColumn}"
-                                          Checked="ColumnVisibility_Changed" Unchecked="ColumnVisibility_Changed" />
+                                          Checked="ColumnVisibility_Changed" Unchecked="ColumnVisibility_Changed">
+                                    <MenuItem.Tag>
+                                        <GridViewColumn Header="SOAP Method" Width="200"
+                                                        DisplayMemberBinding="{Binding SoapMethod}" />
+                                    </MenuItem.Tag>
+                                </MenuItem>
                                 <MenuItem Header="X-RequestId" IsCheckable="True" IsChecked="False"
-                                          Tag="{x:Reference XRequestIdColumn}"
-                                          Checked="ColumnVisibility_Changed" Unchecked="ColumnVisibility_Changed" />
+                                          Checked="ColumnVisibility_Changed" Unchecked="ColumnVisibility_Changed">
+                                    <MenuItem.Tag>
+                                        <GridViewColumn Header="X-RequestId" Width="200"
+                                                        DisplayMemberBinding="{Binding XRequestId}" />
+                                    </MenuItem.Tag>
+                                </MenuItem>
                                 <Separator />
                                 <MenuItem Header="Auto-size Columns" Click="AutoSizeColumns_Click" />
                             </ContextMenu>
                         </GridView.ColumnHeaderContextMenu>
-                        <GridViewColumn x:Name="DateColumn" Header="Date" Width="0"
-                                        DisplayMemberBinding="{Binding Date}" />
                         <GridViewColumn x:Name="TimeColumn" Header="Time" Width="90"
                                         DisplayMemberBinding="{Binding Time}" />
                         <GridViewColumn x:Name="MethodColumn" Header="Method" Width="70"
@@ -458,33 +463,24 @@
                                         DisplayMemberBinding="{Binding Response}" />
                         <GridViewColumn x:Name="LatencyColumn" Header="Latency (ms)" Width="90"
                                         DisplayMemberBinding="{Binding Latency, StringFormat=N0}" />
-                        <GridViewColumn x:Name="UrlColumn" Header="URL" Width="0"
-                                        DisplayMemberBinding="{Binding Url}" />
                         <GridViewColumn x:Name="HostColumn" Header="Host" Width="160"
                                         DisplayMemberBinding="{Binding Host}" />
                         <GridViewColumn x:Name="PathColumn" Header="Path" Width="240"
                                         DisplayMemberBinding="{Binding Path}" />
-                        <GridViewColumn x:Name="ContentTypeColumn" Header="Content-Type" Width="0"
-                                        DisplayMemberBinding="{Binding ContentType}" />
-                        <GridViewColumn x:Name="ClientRequestIdColumn" Header="Client-Request-Id" Width="0"
-                                        DisplayMemberBinding="{Binding ClientRequestId}" />
-                        <GridViewColumn x:Name="SoapMethodColumn" Header="SOAP Method" Width="0"
-                                        DisplayMemberBinding="{Binding SoapMethod}" />
-                        <GridViewColumn x:Name="XRequestIdColumn" Header="X-RequestId" Width="0"
-                                        DisplayMemberBinding="{Binding XRequestId}" />
                     </GridView>
                 </ListView.View>
             </ListView>
             </Grid>
 
-            <GridSplitter Grid.Column="1" Width="4" HorizontalAlignment="Stretch"
+            <GridSplitter x:Name="VerticalWorkspaceSplitter"
+                          Grid.Row="0" Grid.Column="1" Width="4" HorizontalAlignment="Stretch"
                           VerticalAlignment="Stretch"
                           Background="{DynamicResource ControlFillColorDefaultBrush}" />
 
-            <TabControl Grid.Column="2" x:Name="MainTabControl" 
+            <TabControl Grid.Row="0" Grid.Column="2" x:Name="MainTabControl"
                         SelectionChanged="MainTabControl_SelectionChanged"
                         PreviewMouseDown="MainTabControl_PreviewMouseDown">
-                <TabItem Header="Summary">
+                <TabItem x:Name="SummaryTab" Header="Summary">
                     <RichTextBox x:Name="SummaryViewer" IsReadOnly="True"
                                  VerticalScrollBarVisibility="Auto"
                                  HorizontalScrollBarVisibility="Auto"
@@ -500,7 +496,7 @@
                         </RichTextBox.ContextMenu>
                     </RichTextBox>
                 </TabItem>
-                <TabItem Header="Request">
+                <TabItem x:Name="RequestTab" Header="Request">
                     <Grid x:Name="RequestViewerGrid" SizeChanged="RequestViewerGrid_SizeChanged" Visibility="Collapsed">
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto" />
@@ -643,7 +639,7 @@
                         </Grid>
                     </Grid>
                 </TabItem>
-                <TabItem Header="Response">
+                <TabItem x:Name="ResponseTab" Header="Response">
                     <Grid x:Name="ResponseViewerGrid" SizeChanged="ResponseViewerGrid_SizeChanged" Visibility="Collapsed">
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto" />
@@ -786,7 +782,7 @@
                         </Grid>
                     </Grid>
                 </TabItem>
-                <TabItem Header="REST">
+                <TabItem x:Name="RestTab" Header="REST">
                     <Grid>
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto" MaxHeight="300" />
@@ -827,7 +823,7 @@
                         </TreeView>
                     </Grid>
                 </TabItem>
-                <TabItem Header="SOAP">
+                <TabItem x:Name="SoapTab" Header="SOAP">
                     <RichTextBox x:Name="SoapViewer" IsReadOnly="True"
                                  VerticalScrollBarVisibility="Auto"
                                  HorizontalScrollBarVisibility="Auto"
@@ -843,7 +839,7 @@
                         </RichTextBox.ContextMenu>
                     </RichTextBox>
                 </TabItem>
-                <TabItem Header="MAPI">
+                <TabItem x:Name="MapiTab" Header="MAPI">
                     <RichTextBox x:Name="MapiViewer" IsReadOnly="True"
                                  VerticalScrollBarVisibility="Auto"
                                  HorizontalScrollBarVisibility="Auto"
@@ -859,6 +855,50 @@
                         </RichTextBox.ContextMenu>
                     </RichTextBox>
                 </TabItem>
+            </TabControl>
+
+            <GridSplitter x:Name="HorizontalWorkspaceSplitter"
+                          Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="3"
+                          Height="4" HorizontalAlignment="Stretch"
+                          VerticalAlignment="Stretch"
+                          Background="{DynamicResource ControlFillColorDefaultBrush}"
+                          Visibility="Collapsed" />
+
+            <TabControl x:Name="TopLayoutTabControl"
+                        Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="3"
+                        Visibility="Collapsed">
+                <TabItem x:Name="TopSummaryTab" Header="Summary" />
+                <TabItem Header="Request / Response">
+                    <Grid x:Name="SplitDetailsPane">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" MinWidth="200" />
+                            <ColumnDefinition Width="4" />
+                            <ColumnDefinition Width="*" MinWidth="200" />
+                        </Grid.ColumnDefinitions>
+                        <Grid Grid.Column="0">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="*" />
+                            </Grid.RowDefinitions>
+                            <TextBlock Text="Request" FontWeight="SemiBold" Margin="6,4" />
+                            <ContentControl x:Name="SplitRequestHost" Grid.Row="1" />
+                        </Grid>
+                        <GridSplitter Grid.Column="1" Width="4" HorizontalAlignment="Stretch"
+                                      VerticalAlignment="Stretch"
+                                      Background="{DynamicResource ControlFillColorDefaultBrush}" />
+                        <Grid Grid.Column="2">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="*" />
+                            </Grid.RowDefinitions>
+                            <TextBlock Text="Response" FontWeight="SemiBold" Margin="6,4" />
+                            <ContentControl x:Name="SplitResponseHost" Grid.Row="1" />
+                        </Grid>
+                    </Grid>
+                </TabItem>
+                <TabItem x:Name="TopRestTab" Header="REST" />
+                <TabItem x:Name="TopSoapTab" Header="SOAP" />
+                <TabItem x:Name="TopMapiTab" Header="MAPI" />
             </TabControl>
         </Grid>
     </DockPanel>
