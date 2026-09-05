@@ -280,6 +280,9 @@
 
                         <StackPanel Orientation="Horizontal" Margin="0,4,0,0"
                                     HorizontalAlignment="Right">
+                            <Button Content="Load..." Click="LoadFilterRules_Click" MinWidth="70" Margin="0,0,4,0" />
+                            <Button Content="Save..." Click="SaveFilterRules_Click" MinWidth="70" Margin="0,0,4,0" />
+                            <Button Content="Set Default" Click="SetDefaultFilterRules_Click" MinWidth="90" Margin="0,0,4,0" />
                             <Button Content="Clear all" Click="ClearRules_Click" MinWidth="70" />
                         </StackPanel>
                     </StackPanel>
@@ -321,6 +324,7 @@
                 <ListView x:Name="RequestList" Grid.Row="2"
                           SelectionMode="Extended"
                           SelectionChanged="RequestList_SelectionChanged"
+                          PreviewMouseRightButtonDown="RequestList_PreviewMouseRightButtonDown"
                           GridViewColumnHeader.Click="RequestList_HeaderClick"
                           ContextMenuOpening="RequestList_ContextMenuOpening"
                           ScrollViewer.HorizontalScrollBarVisibility="Auto">
@@ -371,10 +375,12 @@
                     </Style>
                 </ListView.ItemContainerStyle>
                 <ListView.ContextMenu>
-                    <ContextMenu>
+                    <ContextMenu Closed="RequestList_ContextMenuClosed">
                         <MenuItem Header="Remove" Click="RemoveItems_Click" />
                         <Separator />
                         <MenuItem x:Name="FilterMenuItem" Header="Filter">
+                            <MenuItem x:Name="FilterCurrentCellMenuItem" Click="FilterCurrentCellMenuItem_Click" />
+                            <Separator />
                             <MenuItem x:Name="FilterHostMenuItem" Click="FilterMenuItem_Click" />
                             <MenuItem x:Name="ExcludeHostMenuItem" Click="FilterMenuItem_Click" />
                             <Separator />
@@ -383,6 +389,9 @@
                             <Separator />
                             <MenuItem x:Name="FilterPathMenuItem" Click="FilterMenuItem_Click" />
                             <MenuItem x:Name="ExcludePathMenuItem" Click="FilterMenuItem_Click" />
+                        </MenuItem>
+                        <MenuItem x:Name="HighlightMenuItem" Header="Highlight">
+                            <MenuItem x:Name="HighlightCurrentCellMenuItem" Click="HighlightCurrentCellMenuItem_Click" />
                         </MenuItem>
                     </ContextMenu>
                 </ListView.ContextMenu>

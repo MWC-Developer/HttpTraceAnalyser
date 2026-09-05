@@ -4,7 +4,7 @@
         xmlns:sys="clr-namespace:System;assembly=System.Runtime"
         xmlns:model="clr-namespace:HttpTraceAnalyser.Model"
         xmlns:local="clr-namespace:HttpTraceAnalyser"
-        Title="Highlights" Height="420" Width="760"
+        Title="Highlights" Height="420" Width="900"
         WindowStartupLocation="CenterOwner">
     <Window.Resources>
         <ObjectDataProvider x:Key="ColumnValues" MethodName="GetValues" ObjectType="{x:Type sys:Enum}">
@@ -23,16 +23,43 @@
                     HorizontalAlignment="Right" Margin="0,8,0,0">
             <Button Content="Add" Width="80" Margin="0,0,8,0" Click="AddButton_Click" />
             <Button Content="Remove" Width="80" Margin="0,0,8,0" Click="RemoveButton_Click" />
+                <Button Content="Reset" Width="80" Margin="0,0,8,0" Click="ResetButton_Click"
+                    ToolTip="Restore the saved default. Hold Shift to restore the app defaults." />
+            <Button Content="Load..." Width="80" Margin="0,0,8,0" Click="LoadButton_Click" />
+            <Button Content="Save..." Width="80" Margin="0,0,8,0" Click="SaveButton_Click" />
+            <Button Content="Set Default" Width="90" Margin="0,0,8,0" Click="SetDefaultButton_Click" />
             <Button Content="Close" Width="80" IsCancel="True" IsDefault="True" />
         </StackPanel>
 
         <TextBlock DockPanel.Dock="Top" Margin="0,0,0,6" TextWrapping="Wrap"
-                   Text="Rules are evaluated top-to-bottom; the first matching enabled rule sets the row colour. Colours use #RRGGBB (foreground may be blank)." />
+               Text="Rules are evaluated top-to-bottom; the first matching enabled rule sets the row colour." />
 
         <DataGrid x:Name="RulesGrid" AutoGenerateColumns="False"
                   CanUserAddRows="False" CanUserDeleteRows="False"
-                  SelectionMode="Extended">
+                  SelectionMode="Extended" AllowDrop="True"
+                  PreviewMouseLeftButtonDown="RulesGrid_PreviewMouseLeftButtonDown"
+                  DragOver="RulesGrid_DragOver" DragLeave="RulesGrid_DragLeave"
+                  Drop="RulesGrid_Drop">
             <DataGrid.Columns>
+                <DataGridTemplateColumn Width="32" IsReadOnly="True">
+                    <DataGridTemplateColumn.CellStyle>
+                        <Style TargetType="DataGridCell">
+                            <Setter Property="Cursor" Value="SizeAll" />
+                            <Setter Property="ToolTip" Value="Drag to reorder rule" />
+                            <EventSetter Event="PreviewMouseLeftButtonDown"
+                                         Handler="RuleDragHandle_PreviewMouseLeftButtonDown" />
+                            <EventSetter Event="PreviewMouseMove"
+                                         Handler="RuleDragHandle_PreviewMouseMove" />
+                        </Style>
+                    </DataGridTemplateColumn.CellStyle>
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                            <TextBlock Text="&#xE700;" FontFamily="Segoe Fluent Icons"
+                                       FontSize="12" HorizontalAlignment="Center"
+                                       VerticalAlignment="Center" />
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
                 <DataGridCheckBoxColumn Header="On"
                                         Binding="{Binding IsEnabled, UpdateSourceTrigger=PropertyChanged}"
                                         Width="40" />
@@ -47,12 +74,45 @@
                 <DataGridTextColumn Header="Value"
                                     Binding="{Binding Value, UpdateSourceTrigger=PropertyChanged}"
                                     Width="180" />
-                <DataGridTextColumn Header="Background"
-                                    Binding="{Binding BackgroundColor, Converter={x:Static local:HighlightsWindow.ColorConverter}, UpdateSourceTrigger=LostFocus}"
-                                    Width="110" />
-                <DataGridTextColumn Header="Foreground"
-                                    Binding="{Binding ForegroundColor, Converter={x:Static local:HighlightsWindow.NullableColorConverter}, UpdateSourceTrigger=LostFocus}"
-                                    Width="110" />
+                <DataGridTemplateColumn Header="Background" Width="110">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                            <Button Click="ColorPickerButton_Click" Tag="Background"
+                                    Padding="3" HorizontalAlignment="Stretch"
+                                    HorizontalContentAlignment="Stretch"
+                                    ToolTip="Choose background colour">
+                                <Border Height="20"
+                                        Background="{Binding BackgroundColor, Converter={x:Static local:HighlightsWindow.ColorBrushConverter}}"
+                                        BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}"
+                                        BorderThickness="1" />
+                            </Button>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+                <DataGridTemplateColumn Header="Foreground" Width="140">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <Button Grid.Column="0" Click="ColorPickerButton_Click" Tag="Foreground"
+                                    Padding="3" HorizontalAlignment="Stretch"
+                                    HorizontalContentAlignment="Stretch"
+                                        ToolTip="Choose foreground colour">
+                                    <Border Height="20"
+                                            Background="{Binding ForegroundColor, Converter={x:Static local:HighlightsWindow.ColorBrushConverter}}"
+                                            BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}"
+                                            BorderThickness="1" />
+                                </Button>
+                                <Button Grid.Column="1" Content="&#x2715;" Margin="3,0,0,0" Padding="6,0"
+                                        Click="ClearForegroundButton_Click"
+                                        ToolTip="Use automatic foreground colour" />
+                            </Grid>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
             </DataGrid.Columns>
         </DataGrid>
     </DockPanel>

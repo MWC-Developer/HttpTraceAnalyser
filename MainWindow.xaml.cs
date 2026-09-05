@@ -724,6 +724,72 @@ namespace HttpTraceAnalyser
             return false;
         }
 
+        private void LoadFilterRules_Click(object sender, RoutedEventArgs e)
+        {
+            var dialog = new Microsoft.Win32.OpenFileDialog
+            {
+                Title = "Load filter rules",
+                Filter = "Filter rule files (*.json)|*.json|All files (*.*)|*.*",
+                InitialDirectory = RulePersistence.FilterDirectory,
+            };
+            if (dialog.ShowDialog(this) != true)
+                return;
+
+            try
+            {
+                FilterRuleSet.Load(dialog.FileName);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(this, $"Failed to load filter rules:\n{ex.Message}",
+                    "Load Filters", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        private void SaveFilterRules_Click(object sender, RoutedEventArgs e)
+        {
+            var dialog = new Microsoft.Win32.SaveFileDialog
+            {
+                Title = "Save filter rules",
+                Filter = "Filter rule files (*.json)|*.json|All files (*.*)|*.*",
+                DefaultExt = ".json",
+                AddExtension = true,
+                InitialDirectory = RulePersistence.FilterDirectory,
+            };
+            if (dialog.ShowDialog(this) != true)
+                return;
+
+            try
+            {
+                FilterRuleSet.Save(dialog.FileName);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(this, $"Failed to save filter rules:\n{ex.Message}",
+                    "Save Filters", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        private void SetDefaultFilterRules_Click(object sender, RoutedEventArgs e)
+        {
+            if (MessageBox.Show(this,
+                    "Overwrite the default filter rules with the current rules? These rules will load when the application starts.",
+                    "Set Default Filters", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes)
+            {
+                return;
+            }
+
+            try
+            {
+                FilterRuleSet.SaveAsDefault();
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(this, $"Failed to save the default filter rules:\n{ex.Message}",
+                    "Set Default Filters", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
         private void OnHighlightRulesChanged(object? sender, EventArgs e)
         {
             _trace?.RecomputeHighlights();
@@ -1023,12 +1089,53 @@ namespace HttpTraceAnalyser
 
         private readonly Dictionary<GridViewColumn, double> _savedColumnWidths = new();
 
+        private (DataRowView Row, string FieldName, string Value)? _contextCell;
+
+        private void RequestList_PreviewMouseRightButtonDown(object sender, MouseButtonEventArgs e)
+        {
+            _contextCell = null;
+
+            var presenter = FindVisualAncestor<GridViewRowPresenter>(e.OriginalSource as DependencyObject);
+            if (presenter?.DataContext is not DataRowView row || RequestList.View is not GridView gridView)
+                return;
+
+            double x = e.GetPosition(presenter).X;
+            double rightEdge = 0;
+            foreach (var column in gridView.Columns)
+            {
+                rightEdge += column.ActualWidth;
+                if (x > rightEdge)
+                    continue;
+
+                var fieldName = GetSortMemberPath(column);
+                if (string.IsNullOrEmpty(fieldName) || !row.Row.Table.Columns.Contains(fieldName))
+                    return;
+
+                var rawValue = row.Row[fieldName];
+                var value = rawValue is DBNull
+                    ? string.Empty
+                    : Convert.ToString(rawValue, System.Globalization.CultureInfo.InvariantCulture) ?? string.Empty;
+                _contextCell = (row, fieldName, value);
+                return;
+            }
+        }
+
         private void RequestList_ContextMenuOpening(object sender, ContextMenuEventArgs e)
         {
-            var hasRow = RequestList.SelectedItem is DataRowView;
+            var hasRow = _contextCell is not null;
             FilterMenuItem.IsEnabled = hasRow;
+            HighlightMenuItem.IsEnabled = hasRow;
 
-            if (RequestList.SelectedItem is DataRowView drv)
+            if (_contextCell is { } cell)
+            {
+                var displayValue = cell.Value.Length <= 80
+                    ? cell.Value
+                    : cell.Value[..77] + "...";
+                FilterCurrentCellMenuItem.Header = $"Current cell value equals {displayValue}";
+                HighlightCurrentCellMenuItem.Header = $"Current cell value equals {displayValue}";
+            }
+
+            if (_contextCell is { Row: var drv })
             {
                 var host = drv.Row[TraceDataSchema.Host] as string ?? string.Empty;
                 var method = drv.Row[TraceDataSchema.Method] as string ?? string.Empty;
@@ -1043,6 +1150,11 @@ namespace HttpTraceAnalyser
                 SetFilterMenuItem(FilterPathMenuItem, "only path", FilterField.Path, FilterComparator.Equals, path);
                 SetFilterMenuItem(ExcludePathMenuItem, "exclude path", FilterField.Path, FilterComparator.NotEquals, path);
             }
+        }
+
+        private void RequestList_ContextMenuClosed(object sender, RoutedEventArgs e)
+        {
+            _contextCell = null;
         }
 
         private static void SetFilterMenuItem(MenuItem item, string headerPrefix, FilterField field, FilterComparator comparator, string value)
@@ -1064,6 +1176,73 @@ namespace HttpTraceAnalyser
                 Comparator = comparator,
                 Value = value,
             });
+        }
+
+        private void FilterCurrentCellMenuItem_Click(object sender, RoutedEventArgs e)
+        {
+            if (_contextCell is not { } cell || !TryGetFilterField(cell.FieldName, out var field))
+                return;
+
+            FilterRuleSet.Rules.Add(new FilterRule
+            {
+                Combinator = FilterCombinator.And,
+                Field = field,
+                CustomFieldName = field == FilterField.Custom ? cell.FieldName : string.Empty,
+                Comparator = FilterComparator.Equals,
+                Value = cell.Value,
+            });
+        }
+
+        private void HighlightCurrentCellMenuItem_Click(object sender, RoutedEventArgs e)
+        {
+            if (_contextCell is not { } cell || !TryGetHighlightColumn(cell.FieldName, out var column))
+                return;
+
+            HighlightRuleSet.Rules.Insert(0, new HighlightRule
+            {
+                Column = column,
+                CustomFieldName = column == HighlightColumn.Custom ? cell.FieldName : string.Empty,
+                Operator = HighlightOperator.Equals,
+                Value = cell.Value,
+                BackgroundColor = Colors.LightYellow,
+            });
+        }
+
+        private static bool TryGetFilterField(string fieldName, out FilterField field)
+        {
+            if (Enum.TryParse(fieldName, out field))
+                return true;
+            if (HttpTraceFile.ExtendedFieldNames.Contains(fieldName))
+            {
+                field = FilterField.Custom;
+                return true;
+            }
+            return false;
+        }
+
+        private static bool TryGetHighlightColumn(string fieldName, out HighlightColumn column)
+        {
+            if (Enum.TryParse(fieldName, out column))
+                return true;
+            if (HttpTraceFile.ExtendedFieldNames.Contains(fieldName))
+            {
+                column = HighlightColumn.Custom;
+                return true;
+            }
+            return false;
+        }
+
+        private static T? FindVisualAncestor<T>(DependencyObject? source) where T : DependencyObject
+        {
+            while (source is not null)
+            {
+                if (source is T match)
+                    return match;
+                source = source is Visual || source is System.Windows.Media.Media3D.Visual3D
+                    ? VisualTreeHelper.GetParent(source)
+                    : LogicalTreeHelper.GetParent(source);
+            }
+            return null;
         }
 
         private void RemoveItems_Click(object sender, RoutedEventArgs e)
@@ -2502,7 +2681,7 @@ namespace HttpTraceAnalyser
                     else
                     {
                         // Calculate brightness and use black for light backgrounds, white for dark
-                        p.Foreground = GetContrastingForeground(matchedRule.BackgroundColor);
+                        p.Foreground = ThemeManager.GetContrastingForeground(matchedRule.BackgroundColor);
                     }
                 }
 
@@ -2979,29 +3158,6 @@ namespace HttpTraceAnalyser
 
         private static string FormatTimestamp(DateTimeOffset? timestamp)
             => timestamp?.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss.fff") ?? "(unknown)";
-
-        /// <summary>
-        /// Returns a contrasting foreground brush (black or white) based on the brightness
-        /// of the given background color, ensuring text remains readable.
-        /// </summary>
-        private static Brush GetContrastingForeground(Color backgroundColor)
-        {
-            // Calculate relative luminance using the standard formula (Rec. 709)
-            // https://www.w3.org/TR/WCAG20/#relativeluminancedef
-            double r = backgroundColor.R / 255.0;
-            double g = backgroundColor.G / 255.0;
-            double b = backgroundColor.B / 255.0;
-
-            // Apply gamma correction
-            r = r <= 0.03928 ? r / 12.92 : Math.Pow((r + 0.055) / 1.055, 2.4);
-            g = g <= 0.03928 ? g / 12.92 : Math.Pow((g + 0.055) / 1.055, 2.4);
-            b = b <= 0.03928 ? b / 12.92 : Math.Pow((b + 0.055) / 1.055, 2.4);
-
-            double luminance = 0.2126 * r + 0.7152 * g + 0.0722 * b;
-
-            // Use white text for dark backgrounds (luminance < 0.5), black for light backgrounds
-            return luminance < 0.5 ? Brushes.White : Brushes.Black;
-        }
 
             }
         }
