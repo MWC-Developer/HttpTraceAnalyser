@@ -12,8 +12,10 @@ using System.Windows.Controls;
 using System.Windows.Data;
 using System.Windows.Documents;
 using System.Windows.Input;
+using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
+using System.Windows.Threading;
 using System.Xml.Linq;
 using HttpTraceAnalyser.Model;
 using ICSharpCode.AvalonEdit.Highlighting;
@@ -80,9 +82,45 @@ namespace HttpTraceAnalyser
         // Track if we're populating viewers to suppress format change events
         private bool _isPopulatingViewers;
 
+        private FrameworkElement[] _middleMouseScrollTargets = [];
+        private FrameworkElement? _middleMouseScrollTarget;
+        private ScrollViewer? _middleMouseScrollViewer;
+        private DispatcherTimer? _middleMouseScrollTimer;
+        private bool _middleMouseAutoScrollActive;
+        private Point _middleMouseScrollAnchor;
+        private Point _middleMouseScrollPosition;
+        private Cursor? _previousOverrideCursor;
+        private HwndSource? _windowSource;
+
+        private const int WmMouseHorizontalWheel = 0x020E;
+
         public MainWindow()
         {
             InitializeComponent();
+
+            _middleMouseScrollTargets =
+            [
+                RequestList,
+                RequestHeadersText,
+                RequestPayloadEditor,
+                RequestPayloadImageScroll,
+                RequestPayloadSvgScroll,
+                ResponseHeadersText,
+                ResponsePayloadEditor,
+                ResponsePayloadImageScroll,
+                ResponsePayloadSvgScroll,
+            ];
+            foreach (var target in _middleMouseScrollTargets)
+            {
+                target.AddHandler(Mouse.PreviewMouseDownEvent,
+                    new MouseButtonEventHandler(ScrollableViewer_PreviewMouseDown), handledEventsToo: true);
+                target.AddHandler(Mouse.PreviewMouseMoveEvent,
+                    new MouseEventHandler(ScrollableViewer_PreviewMouseMove), handledEventsToo: true);
+                target.AddHandler(Mouse.LostMouseCaptureEvent,
+                    new MouseEventHandler(ScrollableViewer_LostMouseCapture), handledEventsToo: true);
+            }
+            AddHandler(Keyboard.PreviewKeyDownEvent,
+                new KeyEventHandler(ScrollableViewer_PreviewKeyDown), handledEventsToo: true);
 
             // Add grid columns + column-chooser entries for any fields contributed by
             // plugins loaded during App.OnStartup (see Model/Extensibility/PluginManager).
@@ -97,6 +135,7 @@ namespace HttpTraceAnalyser
             // Disable link detection after controls are loaded to prevent regex performance issues.
             // This is a redundant safety measure in addition to the global handler in App.OnStartup.
             Loaded += (_, _) => DisableLinkDetection();
+            SourceInitialized += MainWindow_SourceInitialized;
 
             HighlightRuleSet.RulesChanged += OnHighlightRulesChanged;
             FilterRuleSet.FiltersChanged += OnFilterRulesChanged;
@@ -108,6 +147,8 @@ namespace HttpTraceAnalyser
                 HighlightRuleSet.RulesChanged -= OnHighlightRulesChanged;
                 FilterRuleSet.FiltersChanged -= OnFilterRulesChanged;
                 ThemeManager.ThemeChanged -= OnThemeChanged;
+                StopMiddleMouseAutoScroll();
+                _windowSource?.RemoveHook(WindowMessageHook);
             };
         }
 
@@ -369,6 +410,156 @@ namespace HttpTraceAnalyser
                     return;
                 }
             }
+        }
+
+        private void ScrollableViewer_PreviewMouseDown(object sender, MouseButtonEventArgs e)
+        {
+            if (_middleMouseAutoScrollActive)
+            {
+                StopMiddleMouseAutoScroll();
+                if (e.ChangedButton == MouseButton.Middle)
+                    e.Handled = true;
+                return;
+            }
+
+            if (e.ChangedButton != MouseButton.Middle)
+                return;
+
+            if (sender is not FrameworkElement target)
+                return;
+
+            var scrollViewer = GetScrollViewer(target);
+            if (scrollViewer is null)
+                return;
+
+            _middleMouseScrollTarget = target;
+            _middleMouseScrollViewer = scrollViewer;
+            _middleMouseScrollAnchor = e.GetPosition(target);
+            _middleMouseScrollPosition = _middleMouseScrollAnchor;
+            _previousOverrideCursor = Mouse.OverrideCursor;
+            Mouse.OverrideCursor = Cursors.ScrollAll;
+            _middleMouseAutoScrollActive = true;
+
+            _middleMouseScrollTimer ??= new DispatcherTimer(
+                TimeSpan.FromMilliseconds(16),
+                DispatcherPriority.Input,
+                MiddleMouseScrollTimer_Tick,
+                Dispatcher);
+            _middleMouseScrollTimer.Start();
+            Mouse.Capture(target, CaptureMode.SubTree);
+            e.Handled = true;
+        }
+
+        private void ScrollableViewer_PreviewMouseMove(object sender, MouseEventArgs e)
+        {
+            if (_middleMouseAutoScrollActive && _middleMouseScrollTarget is not null)
+                _middleMouseScrollPosition = e.GetPosition(_middleMouseScrollTarget);
+        }
+
+        private void ScrollableViewer_LostMouseCapture(object sender, MouseEventArgs e)
+        {
+            if (_middleMouseAutoScrollActive)
+                StopMiddleMouseAutoScroll();
+        }
+
+        private void ScrollableViewer_PreviewKeyDown(object sender, KeyEventArgs e)
+        {
+            if (_middleMouseAutoScrollActive && e.Key == Key.Escape)
+            {
+                StopMiddleMouseAutoScroll();
+                e.Handled = true;
+            }
+        }
+
+        private void MiddleMouseScrollTimer_Tick(object? sender, EventArgs e)
+        {
+            if (_middleMouseScrollViewer is null)
+                return;
+
+            var horizontalDelta = GetAutoScrollDelta(_middleMouseScrollPosition.X - _middleMouseScrollAnchor.X);
+            var verticalDelta = GetAutoScrollDelta(_middleMouseScrollPosition.Y - _middleMouseScrollAnchor.Y);
+
+            if (horizontalDelta != 0)
+                _middleMouseScrollViewer.ScrollToHorizontalOffset(_middleMouseScrollViewer.HorizontalOffset + horizontalDelta);
+            if (verticalDelta != 0)
+                _middleMouseScrollViewer.ScrollToVerticalOffset(_middleMouseScrollViewer.VerticalOffset + verticalDelta);
+        }
+
+        private static double GetAutoScrollDelta(double distance)
+        {
+            const double DeadZone = 12;
+            const double SpeedFactor = 0.15;
+            const double MaximumDelta = 48;
+
+            var magnitude = Math.Abs(distance);
+            if (magnitude <= DeadZone)
+                return 0;
+
+            return Math.Sign(distance) * Math.Min(MaximumDelta, (magnitude - DeadZone) * SpeedFactor);
+        }
+
+        private void MainWindow_SourceInitialized(object? sender, EventArgs e)
+        {
+            _windowSource = PresentationSource.FromVisual(this) as HwndSource;
+            _windowSource?.AddHook(WindowMessageHook);
+        }
+
+        private IntPtr WindowMessageHook(IntPtr hwnd, int message, IntPtr wParam, IntPtr lParam, ref bool handled)
+        {
+            if (message != WmMouseHorizontalWheel)
+                return IntPtr.Zero;
+
+            var hoveredTarget = _middleMouseScrollTargets.FirstOrDefault(target => target.IsVisible && target.IsMouseOver);
+            if (hoveredTarget is null)
+                return IntPtr.Zero;
+
+            var scrollViewer = GetScrollViewer(hoveredTarget);
+            if (scrollViewer is null)
+                return IntPtr.Zero;
+
+            int wheelDelta = (short)((wParam.ToInt64() >> 16) & 0xffff);
+            bool canScroll = wheelDelta > 0
+                ? scrollViewer.HorizontalOffset < scrollViewer.ScrollableWidth
+                : scrollViewer.HorizontalOffset > 0;
+            if (!canScroll)
+                return IntPtr.Zero;
+
+            const double PixelsPerWheelDetent = 48;
+            scrollViewer.ScrollToHorizontalOffset(
+                scrollViewer.HorizontalOffset + wheelDelta / 120.0 * PixelsPerWheelDetent);
+            handled = true;
+            return IntPtr.Zero;
+        }
+
+        private void StopMiddleMouseAutoScroll()
+        {
+            _middleMouseAutoScrollActive = false;
+            _middleMouseScrollTimer?.Stop();
+            Mouse.OverrideCursor = _previousOverrideCursor;
+            _previousOverrideCursor = null;
+            if (Mouse.Captured == _middleMouseScrollTarget)
+                Mouse.Capture(null);
+            _middleMouseScrollTarget = null;
+            _middleMouseScrollViewer = null;
+        }
+
+        private static ScrollViewer? GetScrollViewer(FrameworkElement target)
+            => target as ScrollViewer ?? FindVisualChild<ScrollViewer>(target);
+
+        private static T? FindVisualChild<T>(DependencyObject parent) where T : DependencyObject
+        {
+            for (int i = 0; i < VisualTreeHelper.GetChildrenCount(parent); i++)
+            {
+                var child = VisualTreeHelper.GetChild(parent, i);
+                if (child is T match)
+                    return match;
+
+                var descendant = FindVisualChild<T>(child);
+                if (descendant is not null)
+                    return descendant;
+            }
+
+            return null;
         }
 
         private void RequestList_HeaderClick(object sender, RoutedEventArgs e)
