@@ -40,6 +40,7 @@ namespace HttpTraceAnalyser
         private IReadOnlyList<KeyValuePair<string, string>>? _responseHeaders;
 
         private enum PayloadFormat { PlainText = 0, Json = 1, Xml = 2, Html = 3, JavaScript = 4, Image = 5, Svg = 6 }
+        private enum FindScope { AllSessions = 0, RequestHeaders = 1, RequestBody = 2, ResponseHeaders = 3, ResponseBody = 4 }
 
         // Word-wrap state for the RichTextBox viewers (Summary, Mapi). RichTextBox has
         // no built-in wrap toggle; we simulate it by pinning Document.PageWidth. State
@@ -248,6 +249,474 @@ namespace HttpTraceAnalyser
         private void ClearRules_Click(object sender, RoutedEventArgs e)
         {
             FilterRuleSet.Rules.Clear();
+        }
+
+        private void FindCommand_Executed(object sender, ExecutedRoutedEventArgs e)
+            => OpenFindForCurrentFocus();
+
+        private async void MainWindow_PreviewKeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.Key == Key.F && Keyboard.Modifiers == ModifierKeys.Control)
+            {
+                OpenFindForCurrentFocus();
+                e.Handled = true;
+            }
+            else if (TryGetFocusedFindScope(out var scope)
+                     && GetLocalFindControls(scope).Bar.Visibility == Visibility.Visible)
+            {
+                if (e.Key == Key.Enter)
+                {
+                    await FindLocalAsync(scope, forward: (Keyboard.Modifiers & ModifierKeys.Shift) == 0);
+                    e.Handled = true;
+                }
+                else if (e.Key == Key.Escape)
+                {
+                    CloseLocalFind(scope);
+                    e.Handled = true;
+                }
+            }
+        }
+
+        private void OpenFindForCurrentFocus()
+        {
+            if (TryGetFocusedFindScope(out var scope))
+            {
+                OpenLocalFind(scope);
+                return;
+            }
+
+            FindSessionsBar.Visibility = Visibility.Visible;
+            FindSessionsText.Focus();
+            FindSessionsText.SelectAll();
+        }
+
+        private bool TryGetFocusedFindScope(out FindScope scope)
+        {
+            if (RequestHeadersPanel.IsKeyboardFocusWithin)
+                scope = FindScope.RequestHeaders;
+            else if (RequestBodyPanel.IsKeyboardFocusWithin)
+                scope = FindScope.RequestBody;
+            else if (ResponseHeadersPanel.IsKeyboardFocusWithin)
+                scope = FindScope.ResponseHeaders;
+            else if (ResponseBodyPanel.IsKeyboardFocusWithin)
+                scope = FindScope.ResponseBody;
+            else
+            {
+                scope = FindScope.AllSessions;
+                return false;
+            }
+
+            return true;
+        }
+
+        private void OpenLocalFind(FindScope scope)
+        {
+            var (bar, searchBox, _) = GetLocalFindControls(scope);
+            bar.Visibility = Visibility.Visible;
+            searchBox.Focus();
+            searchBox.SelectAll();
+        }
+
+        private async void LocalFindNextButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (TryGetFindScope(sender, out var scope))
+                await FindLocalAsync(scope, forward: true);
+        }
+
+        private async void LocalFindPreviousButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (TryGetFindScope(sender, out var scope))
+                await FindLocalAsync(scope, forward: false);
+        }
+
+        private void LocalFindCloseButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (TryGetFindScope(sender, out var scope))
+                CloseLocalFind(scope);
+        }
+
+        private async void LocalFindText_KeyDown(object sender, KeyEventArgs e)
+        {
+            if (!TryGetFindScope(sender, out var scope))
+                return;
+
+            if (e.Key == Key.Escape)
+            {
+                CloseLocalFind(scope);
+                e.Handled = true;
+            }
+            else if (e.Key == Key.Enter)
+            {
+                await FindLocalAsync(scope, forward: (Keyboard.Modifiers & ModifierKeys.Shift) == 0);
+                e.Handled = true;
+            }
+        }
+
+        private void LocalFindText_TextChanged(object sender, TextChangedEventArgs e)
+        {
+            if (TryGetFindScope(sender, out var scope))
+                GetLocalFindControls(scope).Status.Text = string.Empty;
+        }
+
+        private async Task FindLocalAsync(FindScope scope, bool forward)
+        {
+            var (_, searchBox, status) = GetLocalFindControls(scope);
+            var searchText = searchBox.Text;
+            if (string.IsNullOrWhiteSpace(searchText))
+            {
+                status.Text = string.Empty;
+                return;
+            }
+
+            switch (scope)
+            {
+                case FindScope.RequestHeaders:
+                    SelectTextMatch(RequestHeadersText, searchText, forward, status);
+                    break;
+                case FindScope.RequestBody:
+                    await PreparePayloadForSearchAsync(request: true);
+                    SelectTextMatch(RequestPayloadEditor, searchText, forward, status);
+                    break;
+                case FindScope.ResponseHeaders:
+                    SelectTextMatch(ResponseHeadersText, searchText, forward, status);
+                    break;
+                case FindScope.ResponseBody:
+                    await PreparePayloadForSearchAsync(request: false);
+                    SelectTextMatch(ResponsePayloadEditor, searchText, forward, status);
+                    break;
+            }
+
+            if (status.Text == "Match found")
+                FocusFindTarget(scope);
+            else
+                searchBox.Focus();
+        }
+
+        private void CloseLocalFind(FindScope scope)
+        {
+            var (bar, _, status) = GetLocalFindControls(scope);
+            bar.Visibility = Visibility.Collapsed;
+            status.Text = string.Empty;
+            FocusFindTarget(scope);
+        }
+
+        private (Border Bar, TextBox SearchBox, TextBlock Status) GetLocalFindControls(FindScope scope)
+            => scope switch
+            {
+                FindScope.RequestHeaders => (RequestHeadersFindBar, RequestHeadersFindText, RequestHeadersFindStatus),
+                FindScope.RequestBody => (RequestBodyFindBar, RequestBodyFindText, RequestBodyFindStatus),
+                FindScope.ResponseHeaders => (ResponseHeadersFindBar, ResponseHeadersFindText, ResponseHeadersFindStatus),
+                FindScope.ResponseBody => (ResponseBodyFindBar, ResponseBodyFindText, ResponseBodyFindStatus),
+                _ => throw new ArgumentOutOfRangeException(nameof(scope)),
+            };
+
+        private static bool TryGetFindScope(object sender, out FindScope scope)
+            => Enum.TryParse((sender as FrameworkElement)?.Tag as string, out scope)
+               && scope != FindScope.AllSessions;
+
+        private void FocusFindTarget(FindScope scope)
+        {
+            if (scope == FindScope.RequestHeaders)
+                RequestHeadersText.Focus();
+            else if (scope == FindScope.RequestBody)
+                RequestPayloadEditor.Focus();
+            else if (scope == FindScope.ResponseHeaders)
+                ResponseHeadersText.Focus();
+            else if (scope == FindScope.ResponseBody)
+                ResponsePayloadEditor.Focus();
+        }
+
+        private async void FindNextButton_Click(object sender, RoutedEventArgs e)
+            => await FindAsync(forward: true);
+
+        private async void FindPreviousButton_Click(object sender, RoutedEventArgs e)
+            => await FindAsync(forward: false);
+
+        private void CloseFindButton_Click(object sender, RoutedEventArgs e)
+            => CloseFindSessionsBar();
+
+        private void FindSessionsText_TextChanged(object sender, TextChangedEventArgs e)
+        {
+            FindSessionsStatus.Text = string.Empty;
+        }
+
+        private void FindScopeCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (FindSessionsStatus is not null)
+                FindSessionsStatus.Text = string.Empty;
+        }
+
+        private async void FindSessionsText_KeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.Key == Key.Escape)
+            {
+                CloseFindSessionsBar();
+                e.Handled = true;
+            }
+            else if (e.Key == Key.Enter)
+            {
+                await FindAsync(forward: (Keyboard.Modifiers & ModifierKeys.Shift) == 0);
+                e.Handled = true;
+            }
+        }
+
+        private void CloseFindSessionsBar()
+        {
+            FindSessionsBar.Visibility = Visibility.Collapsed;
+            FindSessionsStatus.Text = string.Empty;
+            RequestList.Focus();
+        }
+
+        private async Task FindAsync(bool forward)
+        {
+            var scope = (FindScope)FindScopeCombo.SelectedIndex;
+            if (scope == FindScope.AllSessions)
+            {
+                FindSession(forward);
+                return;
+            }
+
+            await FindInSelectedSessionAsync(scope, forward);
+            FindSessionsText.Focus();
+        }
+
+        private void FindSession(bool forward)
+        {
+            var searchText = FindSessionsText.Text;
+            var count = RequestList.Items.Count;
+            if (string.IsNullOrWhiteSpace(searchText) || count == 0)
+            {
+                FindSessionsStatus.Text = count == 0 ? "No sessions" : string.Empty;
+                return;
+            }
+
+            var step = forward ? 1 : -1;
+            var selectedIndex = RequestList.SelectedIndex;
+            var startIndex = selectedIndex < 0
+                ? (forward ? 0 : count - 1)
+                : ((selectedIndex + step) % count + count) % count;
+
+            for (var offset = 0; offset < count; offset++)
+            {
+                var index = ((startIndex + step * offset) % count + count) % count;
+                if (RequestList.Items[index] is DataRowView row && RowContainsText(row.Row, searchText))
+                {
+                    RequestList.SelectedItems.Clear();
+                    RequestList.SelectedIndex = index;
+                    RequestList.ScrollIntoView(RequestList.Items[index]);
+                    FindSessionsStatus.Text = $"Session {index + 1} of {count}";
+                    return;
+                }
+            }
+
+            FindSessionsStatus.Text = "No matches";
+        }
+
+        private async Task FindInSelectedSessionAsync(FindScope scope, bool forward)
+        {
+            if (RequestList.SelectedItem is not DataRowView)
+            {
+                FindSessionsStatus.Text = "Select a session";
+                return;
+            }
+
+            var searchText = FindSessionsText.Text;
+            if (string.IsNullOrWhiteSpace(searchText))
+            {
+                FindSessionsStatus.Text = string.Empty;
+                return;
+            }
+
+            switch (scope)
+            {
+                case FindScope.RequestHeaders:
+                    MainTabControl.SelectedIndex = 1;
+                    SelectTextMatch(RequestHeadersText, searchText, forward, FindSessionsStatus);
+                    break;
+                case FindScope.RequestBody:
+                    await PreparePayloadForSearchAsync(request: true);
+                    SelectTextMatch(RequestPayloadEditor, searchText, forward, FindSessionsStatus);
+                    break;
+                case FindScope.ResponseHeaders:
+                    MainTabControl.SelectedIndex = 2;
+                    SelectTextMatch(ResponseHeadersText, searchText, forward, FindSessionsStatus);
+                    break;
+                case FindScope.ResponseBody:
+                    await PreparePayloadForSearchAsync(request: false);
+                    SelectTextMatch(ResponsePayloadEditor, searchText, forward, FindSessionsStatus);
+                    break;
+            }
+        }
+
+        private async Task PreparePayloadForSearchAsync(bool request)
+        {
+            var payload = request ? _requestPayload : _responsePayload;
+            if (payload is not { Length: > 0 })
+                return;
+
+            var editor = request ? RequestPayloadEditor : ResponsePayloadEditor;
+            var formatCombo = request ? RequestPayloadFormatCombo : ResponsePayloadFormatCombo;
+            var format = (PayloadFormat)formatCombo.SelectedIndex;
+            if (format is PayloadFormat.Image or PayloadFormat.Svg)
+            {
+                format = PayloadFormat.PlainText;
+                _isPopulatingViewers = true;
+                try
+                {
+                    formatCombo.SelectedIndex = (int)format;
+                }
+                finally
+                {
+                    _isPopulatingViewers = false;
+                }
+            }
+
+            if (request)
+            {
+                RequestViewerGrid.Visibility = Visibility.Visible;
+                _requestTabEverActivated = true;
+                MainTabControl.SelectedIndex = 1;
+                if (_requestPayloadNeedsRender || string.IsNullOrEmpty(editor.Text))
+                {
+                    _requestPayloadNeedsRender = false;
+                    await RenderRequestPayload(format);
+                }
+            }
+            else
+            {
+                ResponseViewerGrid.Visibility = Visibility.Visible;
+                _responseTabEverActivated = true;
+                MainTabControl.SelectedIndex = 2;
+                if (_responsePayloadNeedsRender || string.IsNullOrEmpty(editor.Text))
+                {
+                    _responsePayloadNeedsRender = false;
+                    await RenderResponsePayload(format);
+                }
+            }
+        }
+
+        private static void SelectTextMatch(TextBox textBox, string searchText, bool forward, TextBlock status)
+        {
+            var index = FindTextIndex(textBox.Text, searchText, textBox.SelectionStart, textBox.SelectionLength, forward);
+            if (index < 0)
+            {
+                status.Text = "No matches";
+                return;
+            }
+
+            textBox.Focus();
+            textBox.Select(index, searchText.Length);
+            CenterTextMatch(textBox, index, searchText.Length);
+            status.Text = "Match found";
+        }
+
+        private static void SelectTextMatch(ICSharpCode.AvalonEdit.TextEditor editor, string searchText, bool forward, TextBlock status)
+        {
+            var index = FindTextIndex(editor.Text, searchText, editor.SelectionStart, editor.SelectionLength, forward);
+            if (index < 0)
+            {
+                status.Text = "No matches";
+                return;
+            }
+
+            editor.Focus();
+            editor.Select(index, searchText.Length);
+            CenterTextMatch(editor, index, searchText.Length);
+            status.Text = "Match found";
+        }
+
+        private static void CenterTextMatch(TextBox textBox, int index, int length)
+        {
+            textBox.ScrollToLine(textBox.GetLineIndexFromCharacterIndex(index));
+            textBox.UpdateLayout();
+
+            var start = textBox.GetRectFromCharacterIndex(index);
+            if (start.IsEmpty)
+                return;
+
+            var endIndex = Math.Min(index + length, textBox.Text.Length);
+            var end = textBox.GetRectFromCharacterIndex(endIndex);
+            var centerX = !end.IsEmpty && Math.Abs(end.Y - start.Y) < start.Height
+                ? (start.X + end.X) / 2
+                : start.X;
+            var centerY = start.Y + start.Height / 2;
+
+            textBox.ScrollToHorizontalOffset(Math.Max(0,
+                textBox.HorizontalOffset + centerX - textBox.ViewportWidth / 2));
+            textBox.ScrollToVerticalOffset(Math.Max(0,
+                textBox.VerticalOffset + centerY - textBox.ViewportHeight / 2));
+        }
+
+        private static void CenterTextMatch(ICSharpCode.AvalonEdit.TextEditor editor, int index, int length)
+        {
+            var startLocation = editor.Document.GetLocation(index);
+            editor.ScrollTo(startLocation.Line, startLocation.Column);
+            editor.UpdateLayout();
+
+            var textView = editor.TextArea.TextView;
+            var scrollInfo = (System.Windows.Controls.Primitives.IScrollInfo)textView;
+            var start = textView.GetVisualPosition(
+                new ICSharpCode.AvalonEdit.TextViewPosition(startLocation),
+                VisualYPosition.LineMiddle);
+            var endLocation = editor.Document.GetLocation(Math.Min(index + length, editor.Document.TextLength));
+            var end = textView.GetVisualPosition(
+                new ICSharpCode.AvalonEdit.TextViewPosition(endLocation),
+                VisualYPosition.LineMiddle);
+            var centerX = endLocation.Line == startLocation.Line
+                ? (start.X + end.X) / 2
+                : start.X;
+
+            scrollInfo.SetHorizontalOffset(Math.Max(0,
+                scrollInfo.HorizontalOffset + centerX - scrollInfo.ViewportWidth / 2));
+            scrollInfo.SetVerticalOffset(Math.Max(0,
+                scrollInfo.VerticalOffset + start.Y - scrollInfo.ViewportHeight / 2));
+        }
+
+        private static int FindTextIndex(string text, string searchText, int selectionStart, int selectionLength, bool forward)
+        {
+            if (string.IsNullOrEmpty(text))
+                return -1;
+
+            if (forward)
+            {
+                var start = Math.Min(selectionStart + selectionLength, text.Length);
+                var index = text.IndexOf(searchText, start, StringComparison.OrdinalIgnoreCase);
+                return index >= 0 || start == 0
+                    ? index
+                    : text.IndexOf(searchText, 0, StringComparison.OrdinalIgnoreCase);
+            }
+
+            var previousStart = Math.Min(selectionStart - 1, text.Length - 1);
+            var previous = previousStart >= 0
+                ? text.LastIndexOf(searchText, previousStart, StringComparison.OrdinalIgnoreCase)
+                : -1;
+            return previous >= 0
+                ? previous
+                : text.LastIndexOf(searchText, StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static bool RowContainsText(DataRow row, string searchText)
+        {
+            foreach (DataColumn column in row.Table.Columns)
+            {
+                if (column.ColumnName is TraceDataSchema.RowBackground or TraceDataSchema.RowForeground)
+                    continue;
+
+                var value = row[column];
+                if (value is byte[] payload)
+                {
+                    if (payload.Length > 0 && Encoding.UTF8.GetString(payload)
+                        .Contains(searchText, StringComparison.OrdinalIgnoreCase))
+                        return true;
+                }
+                else if (value is not DBNull && Convert.ToString(value)?.Contains(
+                    searchText, StringComparison.OrdinalIgnoreCase) == true)
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         private void OnHighlightRulesChanged(object? sender, EventArgs e)

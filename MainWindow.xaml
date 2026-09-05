@@ -11,9 +11,16 @@
         mc:Ignorable="d"
         Title="HTTP Trace Analyser" Height="800" Width="1600"
         WindowState="Normal"
+        PreviewKeyDown="MainWindow_PreviewKeyDown"
         Icon="HttpTraceAnalyser.ico"
         Background="{DynamicResource ApplicationBackgroundBrush}"
         Foreground="{DynamicResource TextFillColorPrimaryBrush}">
+    <Window.CommandBindings>
+        <CommandBinding Command="ApplicationCommands.Find" Executed="FindCommand_Executed" />
+    </Window.CommandBindings>
+    <Window.InputBindings>
+        <KeyBinding Key="F" Modifiers="Control" Command="ApplicationCommands.Find" />
+    </Window.InputBindings>
     <Window.Resources>
         <BooleanToVisibilityConverter x:Key="BoolToVis" />
         <ObjectDataProvider x:Key="FilterFieldValues" MethodName="GetValues" ObjectType="{x:Type sys:Enum}">
@@ -190,6 +197,7 @@
             <Grid Grid.Column="0">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
                     <RowDefinition Height="*" />
                 </Grid.RowDefinitions>
 
@@ -265,7 +273,40 @@
                     </StackPanel>
                 </Border>
 
-                <ListView x:Name="RequestList" Grid.Row="1"
+                <Border x:Name="FindSessionsBar" Grid.Row="1"
+                    Background="{DynamicResource LayerFillColorDefaultBrush}"
+                    BorderBrush="{DynamicResource DividerStrokeColorDefaultBrush}"
+                    BorderThickness="0,0,0,1"
+                    Padding="6" Visibility="Collapsed">
+                    <DockPanel LastChildFill="True">
+                    <Button DockPanel.Dock="Right" Content="&#xE711;" Margin="4,0,0,0"
+                        FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets"
+                        Padding="7,2" ToolTip="Close" Click="CloseFindButton_Click" />
+                    <Button DockPanel.Dock="Right" Content="&#xE72A;" Margin="4,0,0,0"
+                        FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets"
+                        Padding="7,2" ToolTip="Next match (Enter)" Click="FindNextButton_Click" />
+                    <Button DockPanel.Dock="Right" Content="&#xE70E;" Margin="4,0,0,0"
+                        FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets"
+                        Padding="7,2" ToolTip="Previous match (Shift+Enter)" Click="FindPreviousButton_Click" />
+                    <TextBlock x:Name="FindSessionsStatus" DockPanel.Dock="Right"
+                           Margin="8,0,4,0" VerticalAlignment="Center"
+                           Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                          <TextBlock DockPanel.Dock="Left" Text="Find" Margin="0,0,8,0"
+                           VerticalAlignment="Center" FontWeight="SemiBold" />
+                          <ComboBox x:Name="FindScopeCombo" DockPanel.Dock="Left" Width="150" Margin="0,0,6,0"
+                              SelectedIndex="0" SelectionChanged="FindScopeCombo_SelectionChanged">
+                           <ComboBoxItem Content="All sessions" />
+                           <ComboBoxItem Content="Request headers" />
+                           <ComboBoxItem Content="Request body" />
+                           <ComboBoxItem Content="Response headers" />
+                           <ComboBoxItem Content="Response body" />
+                          </ComboBox>
+                    <TextBox x:Name="FindSessionsText" VerticalContentAlignment="Center"
+                         KeyDown="FindSessionsText_KeyDown" TextChanged="FindSessionsText_TextChanged" />
+                    </DockPanel>
+                </Border>
+
+                <ListView x:Name="RequestList" Grid.Row="2"
                           SelectionMode="Extended"
                           SelectionChanged="RequestList_SelectionChanged"
                           GridViewColumnHeader.Click="RequestList_HeaderClick"
@@ -469,7 +510,36 @@
                             <RowDefinition x:Name="RequestPayloadRow" Height="*" />
                         </Grid.RowDefinitions>
                         <TextBlock Grid.Row="0" Text="Headers" FontWeight="Bold" Margin="4,4,4,2" />
+                        <Grid Grid.Row="1" x:Name="RequestHeadersPanel">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="*" />
+                            </Grid.RowDefinitions>
+                            <Border x:Name="RequestHeadersFindBar" Grid.Row="0" Visibility="Collapsed"
+                                    Background="{DynamicResource LayerFillColorDefaultBrush}"
+                                    BorderBrush="{DynamicResource DividerStrokeColorDefaultBrush}"
+                                    BorderThickness="0,0,0,1" Padding="4">
+                                <DockPanel LastChildFill="True">
+                                    <Button DockPanel.Dock="Right" Content="&#xE711;" Tag="RequestHeaders"
+                                            FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" Padding="7,2"
+                                            ToolTip="Close" Click="LocalFindCloseButton_Click" />
+                                    <Button DockPanel.Dock="Right" Content="&#xE72A;" Tag="RequestHeaders" Margin="4,0,0,0"
+                                            FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" Padding="7,2"
+                                            ToolTip="Next match (Enter)" Click="LocalFindNextButton_Click" />
+                                    <Button DockPanel.Dock="Right" Content="&#xE70E;" Tag="RequestHeaders" Margin="4,0,0,0"
+                                            FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" Padding="7,2"
+                                            ToolTip="Previous match (Shift+Enter)" Click="LocalFindPreviousButton_Click" />
+                                    <TextBlock x:Name="RequestHeadersFindStatus" DockPanel.Dock="Right" Margin="8,0,4,0"
+                                               VerticalAlignment="Center" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                                    <TextBlock DockPanel.Dock="Left" Text="Find" Margin="0,0,8,0"
+                                               VerticalAlignment="Center" FontWeight="SemiBold" />
+                                    <TextBox x:Name="RequestHeadersFindText" Tag="RequestHeaders"
+                                             VerticalContentAlignment="Center" KeyDown="LocalFindText_KeyDown"
+                                             TextChanged="LocalFindText_TextChanged" />
+                                </DockPanel>
+                            </Border>
                         <TextBox Grid.Row="1" x:Name="RequestHeadersText" IsReadOnly="True"
+                                 IsInactiveSelectionHighlightEnabled="True"
                                  FontFamily="Consolas" TextWrapping="NoWrap" AcceptsReturn="True"
                                  VerticalScrollBarVisibility="Auto"
                                  HorizontalScrollBarVisibility="Auto">
@@ -483,6 +553,7 @@
                                 </ContextMenu>
                             </TextBox.ContextMenu>
                         </TextBox>
+                        </Grid>
                         <GridSplitter x:Name="RequestPayloadSplitter" Grid.Row="2" Height="4"
                                       HorizontalAlignment="Stretch" VerticalAlignment="Center"
                                       Background="{DynamicResource ControlFillColorDefaultBrush}" />
@@ -504,8 +575,35 @@
                                        Margin="12,0,0,0"
                                        Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
                         </StackPanel>
-                        <Grid Grid.Row="4">
-                            <avalonedit:TextEditor x:Name="RequestPayloadEditor"
+                        <Grid Grid.Row="4" x:Name="RequestBodyPanel">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="*" />
+                            </Grid.RowDefinitions>
+                            <Border x:Name="RequestBodyFindBar" Grid.Row="0" Visibility="Collapsed"
+                                    Background="{DynamicResource LayerFillColorDefaultBrush}"
+                                    BorderBrush="{DynamicResource DividerStrokeColorDefaultBrush}"
+                                    BorderThickness="0,0,0,1" Padding="4">
+                                <DockPanel LastChildFill="True">
+                                    <Button DockPanel.Dock="Right" Content="&#xE711;" Tag="RequestBody"
+                                            FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" Padding="7,2"
+                                            ToolTip="Close" Click="LocalFindCloseButton_Click" />
+                                    <Button DockPanel.Dock="Right" Content="&#xE72A;" Tag="RequestBody" Margin="4,0,0,0"
+                                            FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" Padding="7,2"
+                                            ToolTip="Next match (Enter)" Click="LocalFindNextButton_Click" />
+                                    <Button DockPanel.Dock="Right" Content="&#xE70E;" Tag="RequestBody" Margin="4,0,0,0"
+                                            FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" Padding="7,2"
+                                            ToolTip="Previous match (Shift+Enter)" Click="LocalFindPreviousButton_Click" />
+                                    <TextBlock x:Name="RequestBodyFindStatus" DockPanel.Dock="Right" Margin="8,0,4,0"
+                                               VerticalAlignment="Center" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                                    <TextBlock DockPanel.Dock="Left" Text="Find" Margin="0,0,8,0"
+                                               VerticalAlignment="Center" FontWeight="SemiBold" />
+                                    <TextBox x:Name="RequestBodyFindText" Tag="RequestBody"
+                                             VerticalContentAlignment="Center" KeyDown="LocalFindText_KeyDown"
+                                             TextChanged="LocalFindText_TextChanged" />
+                                </DockPanel>
+                            </Border>
+                            <avalonedit:TextEditor Grid.Row="1" x:Name="RequestPayloadEditor"
                                                    IsReadOnly="True" ShowLineNumbers="True"
                                                    FontFamily="Consolas"
                                                    VerticalScrollBarVisibility="Auto"
@@ -520,7 +618,7 @@
                                     </ContextMenu>
                                 </avalonedit:TextEditor.ContextMenu>
                             </avalonedit:TextEditor>
-                            <ScrollViewer x:Name="RequestPayloadImageScroll"
+                            <ScrollViewer Grid.Row="1" x:Name="RequestPayloadImageScroll"
                                           HorizontalScrollBarVisibility="Auto"
                                           VerticalScrollBarVisibility="Auto"
                                           Background="White"
@@ -528,7 +626,7 @@
                                 <Image x:Name="RequestPayloadImage" Stretch="None"
                                        HorizontalAlignment="Left" VerticalAlignment="Top" />
                             </ScrollViewer>
-                            <ScrollViewer x:Name="RequestPayloadSvgScroll"
+                            <ScrollViewer Grid.Row="1" x:Name="RequestPayloadSvgScroll"
                                           HorizontalScrollBarVisibility="Auto"
                                           VerticalScrollBarVisibility="Auto"
                                           Background="White"
@@ -537,7 +635,7 @@
                                                  HorizontalAlignment="Left"
                                                  VerticalAlignment="Top" />
                             </ScrollViewer>
-                            <TextBlock x:Name="RequestNoPayloadText" Text="(no payload)"
+                            <TextBlock Grid.Row="1" x:Name="RequestNoPayloadText" Text="(no payload)"
                                        FontStyle="Italic"
                                        Foreground="{DynamicResource TextFillColorSecondaryBrush}" Padding="6"
                                        VerticalAlignment="Top" HorizontalAlignment="Left"
@@ -555,7 +653,36 @@
                             <RowDefinition x:Name="ResponsePayloadRow" Height="*" />
                         </Grid.RowDefinitions>
                         <TextBlock Grid.Row="0" Text="Headers" FontWeight="Bold" Margin="4,4,4,2" />
+                        <Grid Grid.Row="1" x:Name="ResponseHeadersPanel">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="*" />
+                            </Grid.RowDefinitions>
+                            <Border x:Name="ResponseHeadersFindBar" Grid.Row="0" Visibility="Collapsed"
+                                    Background="{DynamicResource LayerFillColorDefaultBrush}"
+                                    BorderBrush="{DynamicResource DividerStrokeColorDefaultBrush}"
+                                    BorderThickness="0,0,0,1" Padding="4">
+                                <DockPanel LastChildFill="True">
+                                    <Button DockPanel.Dock="Right" Content="&#xE711;" Tag="ResponseHeaders"
+                                            FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" Padding="7,2"
+                                            ToolTip="Close" Click="LocalFindCloseButton_Click" />
+                                    <Button DockPanel.Dock="Right" Content="&#xE72A;" Tag="ResponseHeaders" Margin="4,0,0,0"
+                                            FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" Padding="7,2"
+                                            ToolTip="Next match (Enter)" Click="LocalFindNextButton_Click" />
+                                    <Button DockPanel.Dock="Right" Content="&#xE70E;" Tag="ResponseHeaders" Margin="4,0,0,0"
+                                            FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" Padding="7,2"
+                                            ToolTip="Previous match (Shift+Enter)" Click="LocalFindPreviousButton_Click" />
+                                    <TextBlock x:Name="ResponseHeadersFindStatus" DockPanel.Dock="Right" Margin="8,0,4,0"
+                                               VerticalAlignment="Center" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                                    <TextBlock DockPanel.Dock="Left" Text="Find" Margin="0,0,8,0"
+                                               VerticalAlignment="Center" FontWeight="SemiBold" />
+                                    <TextBox x:Name="ResponseHeadersFindText" Tag="ResponseHeaders"
+                                             VerticalContentAlignment="Center" KeyDown="LocalFindText_KeyDown"
+                                             TextChanged="LocalFindText_TextChanged" />
+                                </DockPanel>
+                            </Border>
                         <TextBox Grid.Row="1" x:Name="ResponseHeadersText" IsReadOnly="True"
+                                 IsInactiveSelectionHighlightEnabled="True"
                                  FontFamily="Consolas" TextWrapping="NoWrap" AcceptsReturn="True"
                                  VerticalScrollBarVisibility="Auto"
                                  HorizontalScrollBarVisibility="Auto">
@@ -569,6 +696,7 @@
                                 </ContextMenu>
                             </TextBox.ContextMenu>
                         </TextBox>
+                        </Grid>
                         <GridSplitter x:Name="ResponsePayloadSplitter" Grid.Row="2" Height="4"
                                       HorizontalAlignment="Stretch" VerticalAlignment="Center"
                                       Background="{DynamicResource ControlFillColorDefaultBrush}" />
@@ -590,8 +718,35 @@
                                        Margin="12,0,0,0"
                                        Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
                         </StackPanel>
-                        <Grid Grid.Row="4">
-                            <avalonedit:TextEditor x:Name="ResponsePayloadEditor"
+                        <Grid Grid.Row="4" x:Name="ResponseBodyPanel">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="*" />
+                            </Grid.RowDefinitions>
+                            <Border x:Name="ResponseBodyFindBar" Grid.Row="0" Visibility="Collapsed"
+                                    Background="{DynamicResource LayerFillColorDefaultBrush}"
+                                    BorderBrush="{DynamicResource DividerStrokeColorDefaultBrush}"
+                                    BorderThickness="0,0,0,1" Padding="4">
+                                <DockPanel LastChildFill="True">
+                                    <Button DockPanel.Dock="Right" Content="&#xE711;" Tag="ResponseBody"
+                                            FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" Padding="7,2"
+                                            ToolTip="Close" Click="LocalFindCloseButton_Click" />
+                                    <Button DockPanel.Dock="Right" Content="&#xE72A;" Tag="ResponseBody" Margin="4,0,0,0"
+                                            FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" Padding="7,2"
+                                            ToolTip="Next match (Enter)" Click="LocalFindNextButton_Click" />
+                                    <Button DockPanel.Dock="Right" Content="&#xE70E;" Tag="ResponseBody" Margin="4,0,0,0"
+                                            FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" Padding="7,2"
+                                            ToolTip="Previous match (Shift+Enter)" Click="LocalFindPreviousButton_Click" />
+                                    <TextBlock x:Name="ResponseBodyFindStatus" DockPanel.Dock="Right" Margin="8,0,4,0"
+                                               VerticalAlignment="Center" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                                    <TextBlock DockPanel.Dock="Left" Text="Find" Margin="0,0,8,0"
+                                               VerticalAlignment="Center" FontWeight="SemiBold" />
+                                    <TextBox x:Name="ResponseBodyFindText" Tag="ResponseBody"
+                                             VerticalContentAlignment="Center" KeyDown="LocalFindText_KeyDown"
+                                             TextChanged="LocalFindText_TextChanged" />
+                                </DockPanel>
+                            </Border>
+                            <avalonedit:TextEditor Grid.Row="1" x:Name="ResponsePayloadEditor"
                                                    IsReadOnly="True" ShowLineNumbers="True"
                                                    FontFamily="Consolas"
                                                    VerticalScrollBarVisibility="Auto"
@@ -606,7 +761,7 @@
                                     </ContextMenu>
                                 </avalonedit:TextEditor.ContextMenu>
                             </avalonedit:TextEditor>
-                            <ScrollViewer x:Name="ResponsePayloadImageScroll"
+                            <ScrollViewer Grid.Row="1" x:Name="ResponsePayloadImageScroll"
                                           HorizontalScrollBarVisibility="Auto"
                                           VerticalScrollBarVisibility="Auto"
                                           Background="White"
@@ -614,7 +769,7 @@
                                 <Image x:Name="ResponsePayloadImage" Stretch="None"
                                        HorizontalAlignment="Left" VerticalAlignment="Top" />
                             </ScrollViewer>
-                            <ScrollViewer x:Name="ResponsePayloadSvgScroll"
+                            <ScrollViewer Grid.Row="1" x:Name="ResponsePayloadSvgScroll"
                                           HorizontalScrollBarVisibility="Auto"
                                           VerticalScrollBarVisibility="Auto"
                                           Background="White"
@@ -623,7 +778,7 @@
                                                  HorizontalAlignment="Left"
                                                  VerticalAlignment="Top" />
                             </ScrollViewer>
-                            <TextBlock x:Name="ResponseNoPayloadText" Text="(no payload)"
+                            <TextBlock Grid.Row="1" x:Name="ResponseNoPayloadText" Text="(no payload)"
                                        FontStyle="Italic"
                                        Foreground="{DynamicResource TextFillColorSecondaryBrush}" Padding="6"
                                        VerticalAlignment="Top" HorizontalAlignment="Left"
