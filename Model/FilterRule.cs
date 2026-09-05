@@ -38,6 +38,7 @@ namespace HttpTraceAnalyser.Model
         Equals,
         NotEquals,
         Contains,
+        DoesNotContain,
         StartsWith,
         /// <summary>Numeric inclusive range, formatted as "min-max".</summary>
         Range,
@@ -120,6 +121,9 @@ namespace HttpTraceAnalyser.Model
                 case FilterComparator.Contains:
                     return $"[{column}] LIKE {QuoteString("%" + EscapeLike(Value) + "%")}";
 
+                case FilterComparator.DoesNotContain:
+                    return $"NOT ([{column}] LIKE {QuoteString("%" + EscapeLike(Value) + "%")})";
+
                 case FilterComparator.StartsWith:
                     return $"[{column}] LIKE {QuoteString(EscapeLike(Value) + "%")}";
 
@@ -164,13 +168,14 @@ namespace HttpTraceAnalyser.Model
                 return;
             field = value;
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name!));
-            FilterRuleSet.NotifyRuleChanged(this);
         }
     }
 
     /// <summary>Central store of active filter rules; combined left-to-right using each rule's <see cref="FilterRule.Combinator"/>.</summary>
     public static class FilterRuleSet
     {
+        private static bool _suppressNotifications;
+
         public static ObservableCollection<FilterRule> Rules { get; } = new();
 
         public static event EventHandler? FiltersChanged;
@@ -178,6 +183,39 @@ namespace HttpTraceAnalyser.Model
         static FilterRuleSet()
         {
             Rules.CollectionChanged += OnCollectionChanged;
+            if (System.IO.File.Exists(RulePersistence.FilterDefaultPath))
+            {
+                try
+                {
+                    ReplaceRules(RulePersistence.LoadFilters(RulePersistence.FilterDefaultPath));
+                }
+                catch
+                {
+                    // A bad user default must not prevent application startup.
+                }
+            }
+        }
+
+        public static void Save(string path) => RulePersistence.SaveFilters(path, Rules);
+
+        public static void Load(string path) => ReplaceRules(RulePersistence.LoadFilters(path));
+
+        public static void SaveAsDefault() => RulePersistence.SaveFilters(RulePersistence.FilterDefaultPath, Rules);
+
+        private static void ReplaceRules(System.Collections.Generic.IEnumerable<FilterRule> rules)
+        {
+            _suppressNotifications = true;
+            try
+            {
+                Rules.Clear();
+                foreach (var rule in rules)
+                    Rules.Add(rule);
+            }
+            finally
+            {
+                _suppressNotifications = false;
+            }
+            RaiseChanged();
         }
 
         private static void OnCollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
@@ -199,9 +237,11 @@ namespace HttpTraceAnalyser.Model
 
         private static void OnRulePropertyChanged(object? sender, PropertyChangedEventArgs e) => RaiseChanged();
 
-        internal static void NotifyRuleChanged(FilterRule rule) => RaiseChanged();
-
-        private static void RaiseChanged() => FiltersChanged?.Invoke(null, EventArgs.Empty);
+        private static void RaiseChanged()
+        {
+            if (!_suppressNotifications)
+                FiltersChanged?.Invoke(null, EventArgs.Empty);
+        }
 
         /// <summary>
         /// Builds a <see cref="System.Data.DataView.RowFilter"/> expression that combines all rules

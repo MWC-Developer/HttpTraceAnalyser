@@ -38,6 +38,7 @@ namespace HttpTraceAnalyser.Model
         Equals,
         NotEquals,
         Contains,
+        DoesNotContain,
         StartsWith,
         Regex,
         /// <summary>Value formatted as "min-max" (inclusive) for numeric columns.</summary>
@@ -119,6 +120,8 @@ namespace HttpTraceAnalyser.Model
                     return !string.Equals(text, Value, StringComparison.OrdinalIgnoreCase);
                 case HighlightOperator.Contains:
                     return text.Contains(Value, StringComparison.OrdinalIgnoreCase);
+                case HighlightOperator.DoesNotContain:
+                    return !text.Contains(Value, StringComparison.OrdinalIgnoreCase);
                 case HighlightOperator.StartsWith:
                     return text.StartsWith(Value, StringComparison.OrdinalIgnoreCase);
                 case HighlightOperator.Regex:
@@ -164,47 +167,90 @@ namespace HttpTraceAnalyser.Model
                 return;
             field = value;
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name!));
-            HighlightRuleSet.NotifyRuleChanged(this);
         }
     }
 
     /// <summary>Central store of highlight rules; evaluated in order (first match wins).</summary>
     public static class HighlightRuleSet
     {
+        private static bool _suppressNotifications;
+
         public static ObservableCollection<HighlightRule> Rules { get; } = new();
 
         public static event EventHandler? RulesChanged;
 
         static HighlightRuleSet()
         {
-            AddDefaults();
             Rules.CollectionChanged += OnCollectionChanged;
+            ResetToDefault();
         }
 
-        private static void AddDefaults()
+        public static void ResetToDefault()
         {
-            Rules.Add(new HighlightRule
+            if (System.IO.File.Exists(RulePersistence.HighlightDefaultPath))
+            {
+                try
+                {
+                    ReplaceRules(RulePersistence.LoadHighlights(RulePersistence.HighlightDefaultPath));
+                    return;
+                }
+                catch
+                {
+                    // A bad user default must not prevent application startup.
+                }
+            }
+
+            ReplaceRules(CreateFactoryDefaults());
+        }
+
+        public static void ResetToFactoryDefaults() => ReplaceRules(CreateFactoryDefaults());
+
+        public static void Save(string path) => RulePersistence.SaveHighlights(path, Rules);
+
+        public static void Load(string path) => ReplaceRules(RulePersistence.LoadHighlights(path));
+
+        public static void SaveAsDefault() => RulePersistence.SaveHighlights(RulePersistence.HighlightDefaultPath, Rules);
+
+        private static List<HighlightRule> CreateFactoryDefaults() =>
+        [
+            new HighlightRule
             {
                 Column = HighlightColumn.Response,
                 Operator = HighlightOperator.Equals,
                 Value = "429",
-                BackgroundColor = Color.FromRgb(0xFF, 0xF3, 0xB0), // light yellow
-            });
-            Rules.Add(new HighlightRule
+                BackgroundColor = Color.FromRgb(0xFF, 0xF3, 0xB0),
+            },
+            new HighlightRule
             {
                 Column = HighlightColumn.Response,
                 Operator = HighlightOperator.Range,
                 Value = "200-299",
-                BackgroundColor = Color.FromRgb(0xD4, 0xF7, 0xD4), // light green
+                BackgroundColor = Color.FromRgb(0xD4, 0xF7, 0xD4),
                 IsEnabled = false,
-            });
-            Rules.Add(new HighlightRule
+            },
+            new HighlightRule
             {
                 Column = HighlightColumn.Response,
                 Operator = HighlightOperator.Range,
                 Value = "400-599",
-                BackgroundColor = Color.FromRgb(0xF7, 0xC8, 0xC8), // light red
-            });
+                BackgroundColor = Color.FromRgb(0xF7, 0xC8, 0xC8),
+            },
+        ];
+
+        private static void ReplaceRules(IEnumerable<HighlightRule> rules)
+        {
+            _suppressNotifications = true;
+            try
+            {
+                Rules.Clear();
+                foreach (var rule in rules)
+                    Rules.Add(rule);
+            }
+            finally
+            {
+                _suppressNotifications = false;
+            }
+            RaiseChanged();
         }
 
         private static void OnCollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
@@ -226,9 +272,11 @@ namespace HttpTraceAnalyser.Model
 
         private static void OnRulePropertyChanged(object? sender, PropertyChangedEventArgs e) => RaiseChanged();
 
-        internal static void NotifyRuleChanged(HighlightRule rule) => RaiseChanged();
-
-        private static void RaiseChanged() => RulesChanged?.Invoke(null, EventArgs.Empty);
+        private static void RaiseChanged()
+        {
+            if (!_suppressNotifications)
+                RulesChanged?.Invoke(null, EventArgs.Empty);
+        }
 
         /// <summary>Finds the first enabled rule that matches the given item; null if none.</summary>
         public static HighlightRule? Match(object? item)
