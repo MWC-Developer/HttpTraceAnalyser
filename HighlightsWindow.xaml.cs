@@ -30,7 +30,27 @@ namespace HttpTraceAnalyser
         public HighlightsWindow()
         {
             InitializeComponent();
+            ApplyThemedComboBoxColumnStyles();
             RulesGrid.ItemsSource = HighlightRuleSet.Rules;
+        }
+
+        private void ApplyThemedComboBoxColumnStyles()
+        {
+            if (TryFindResource(typeof(ComboBox)) is not Style themedComboBoxStyle)
+                return;
+
+            foreach (var column in RulesGrid.Columns)
+            {
+                if (column is not DataGridComboBoxColumn comboColumn)
+                    continue;
+
+                var style = new Style(typeof(ComboBox), themedComboBoxStyle);
+                style.Setters.Add(new Setter(ComboBox.IsSynchronizedWithCurrentItemProperty, false));
+                style.Seal();
+
+                comboColumn.ElementStyle = style;
+                comboColumn.EditingElementStyle = style;
+            }
         }
 
         private void AddButton_Click(object sender, RoutedEventArgs e)
