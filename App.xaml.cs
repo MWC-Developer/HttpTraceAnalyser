@@ -23,7 +23,8 @@ namespace HttpTraceAnalyser
             // before any trace file is opened, so their loaders/extended fields are registered.
             Model.Extensibility.PluginManager.LoadPlugins();
 
-            ThemeManager.Apply(ThemeManager.GetSystemTheme());
+            ThemeManager.Apply(AppSettings.EffectiveTheme);
+            McpHostManager.Port = AppSettings.McpPort;
         }
 
         protected override void OnExit(ExitEventArgs e)

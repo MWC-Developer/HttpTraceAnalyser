@@ -9,7 +9,7 @@ namespace HttpTraceAnalyser
         {
             InitializeComponent();
             ViewLayoutCombo.SelectedIndex = useSplitView ? 1 : 0;
-            DarkModeCheckBox.IsChecked = ThemeManager.Current == AppTheme.Dark;
+            ThemeCombo.SelectedIndex = (int)AppSettings.ThemePreference;
             HostMcpServerCheckBox.IsChecked = McpHostManager.IsRunning;
             PortTextBox.Text = McpHostManager.Port.ToString();
             McpStatusText.Text = McpHostManager.IsRunning
@@ -22,7 +22,7 @@ namespace HttpTraceAnalyser
 
         public bool UseSplitView => ViewLayoutCombo.SelectedIndex == 1;
 
-        public bool UseDarkMode => DarkModeCheckBox.IsChecked == true;
+        public ThemePreference SelectedThemePreference => (ThemePreference)ThemeCombo.SelectedIndex;
 
         public bool HostMcpServer => HostMcpServerCheckBox.IsChecked == true;
 
@@ -77,7 +77,17 @@ namespace HttpTraceAnalyser
             }
         }
 
-        private void ResetPortButton_Click(object sender, RoutedEventArgs e)
+        private void ResetAppearanceButton_Click(object sender, RoutedEventArgs e)
+        {
+            ThemeCombo.SelectedIndex = (int)ThemePreference.Auto;
+        }
+
+        private void ResetLayoutButton_Click(object sender, RoutedEventArgs e)
+        {
+            ViewLayoutCombo.SelectedIndex = 0;
+        }
+
+        private void ResetIntegrationsButton_Click(object sender, RoutedEventArgs e)
         {
             PortTextBox.Text = McpHostManager.DefaultPort.ToString();
         }

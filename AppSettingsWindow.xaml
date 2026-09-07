@@ -35,15 +35,34 @@
             <Grid Grid.Column="1" Margin="24,18,24,12">
                 <ScrollViewer x:Name="AppearancePage" VerticalScrollBarVisibility="Auto">
                     <StackPanel>
-                        <TextBlock Text="Appearance" FontSize="20" FontWeight="SemiBold" />
-                        <CheckBox x:Name="DarkModeCheckBox" Content="Dark mode" Margin="0,18,0,0" />
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="0" Text="Appearance" FontSize="20" FontWeight="SemiBold" />
+                            <Button Grid.Column="1" Content="Reset" Click="ResetAppearanceButton_Click" />
+                        </Grid>
+                        <TextBlock Text="Theme" FontWeight="SemiBold" Margin="0,18,0,4" />
+                        <ComboBox x:Name="ThemeCombo" Width="180" HorizontalAlignment="Left">
+                            <ComboBoxItem Content="Auto (match system)" />
+                            <ComboBoxItem Content="Light" />
+                            <ComboBoxItem Content="Dark" />
+                        </ComboBox>
                     </StackPanel>
                 </ScrollViewer>
 
                 <ScrollViewer x:Name="LayoutPage" Visibility="Collapsed"
                               VerticalScrollBarVisibility="Auto">
                     <StackPanel>
-                        <TextBlock Text="Layout" FontSize="20" FontWeight="SemiBold" />
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="0" Text="Layout" FontSize="20" FontWeight="SemiBold" />
+                            <Button Grid.Column="1" Content="Reset" Click="ResetLayoutButton_Click" />
+                        </Grid>
                         <TextBlock Text="Session layout" FontWeight="SemiBold" Margin="0,18,0,4" />
                         <ComboBox x:Name="ViewLayoutCombo" Width="220" HorizontalAlignment="Left">
                             <ComboBoxItem Content="Sessions left" />
@@ -55,7 +74,14 @@
                 <ScrollViewer x:Name="IntegrationsPage" Visibility="Collapsed"
                               VerticalScrollBarVisibility="Auto">
                     <StackPanel>
-                        <TextBlock Text="Integrations" FontSize="20" FontWeight="SemiBold" />
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="0" Text="Integrations" FontSize="20" FontWeight="SemiBold" />
+                            <Button Grid.Column="1" Content="Reset" Click="ResetIntegrationsButton_Click" />
+                        </Grid>
                         <TextBlock Text="Host MCP Server" FontSize="16" FontWeight="SemiBold"
                                    Margin="0,18,0,0" />
                         <CheckBox x:Name="HostMcpServerCheckBox"
@@ -67,11 +93,7 @@
                         <TextBlock Text="Listening port" FontWeight="SemiBold" Margin="0,14,0,4" />
                         <TextBlock TextWrapping="Wrap" Margin="0,0,0,6"
                                    Text="The app hosts an MCP HTTP server on the loopback interface (127.0.0.1). Port changes restart the server when necessary." />
-                        <StackPanel Orientation="Horizontal">
-                            <TextBox x:Name="PortTextBox" Width="100" />
-                            <Button Content="Reset to default" Margin="12,0,0,0"
-                                    Click="ResetPortButton_Click" />
-                        </StackPanel>
+                        <TextBox x:Name="PortTextBox" Width="100" HorizontalAlignment="Left" />
                         <TextBlock x:Name="PortErrorText" Foreground="Red" TextWrapping="Wrap"
                                    Visibility="Collapsed" Margin="0,4,0,0" />
 

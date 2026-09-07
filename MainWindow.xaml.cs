@@ -143,6 +143,11 @@ namespace HttpTraceAnalyser
             // Disable link detection after controls are loaded to prevent regex performance issues.
             // This is a redundant safety measure in addition to the global handler in App.OnStartup.
             Loaded += (_, _) => DisableLinkDetection();
+            Loaded += async (_, _) =>
+            {
+                if (AppSettings.UseSplitView)
+                    await SetViewLayoutAsync(useSplitView: true);
+            };
             SourceInitialized += MainWindow_SourceInitialized;
 
             HighlightRuleSet.RulesChanged += OnHighlightRulesChanged;
@@ -754,12 +759,22 @@ namespace HttpTraceAnalyser
             AppSettingsButton.IsEnabled = false;
             try
             {
-                var theme = window.UseDarkMode ? AppTheme.Dark : AppTheme.Light;
+                var theme = window.SelectedThemePreference switch
+                {
+                    ThemePreference.Light => AppTheme.Light,
+                    ThemePreference.Dark => AppTheme.Dark,
+                    _ => ThemeManager.GetSystemTheme(),
+                };
                 if (ThemeManager.Current != theme)
                     ThemeManager.Apply(theme);
 
                 await SetViewLayoutAsync(window.UseSplitView);
                 await ApplyMcpSettingsAsync(window.HostMcpServer, window.McpPort);
+
+                AppSettings.ThemePreference = window.SelectedThemePreference;
+                AppSettings.UseSplitView = window.UseSplitView;
+                AppSettings.McpPort = window.McpPort;
+                AppSettings.Save();
             }
             catch (Exception ex)
             {

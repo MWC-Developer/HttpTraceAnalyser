@@ -105,6 +105,10 @@ HttpTraceAnalyser can host an in-process [Model Context Protocol](https://modelc
 
 The **Host MCP Server** section in **App Settings** also changes the listening port and provides a button to copy the generated MCP client configuration. Changing the port restarts an enabled server automatically.
 
+### App Settings persistence
+
+Appearance (theme: Auto/Light/Dark), Layout (session view), and the MCP listening port are saved to `%LOCALAPPDATA%\HttpTraceAnalyser\app-settings.json` when **App Settings** is closed with **OK**, so they don't need to be reconfigured on the next launch. **Auto** re-detects the system theme on every launch rather than freezing whatever the system theme happened to be at save time. Whether the MCP server is enabled is *not* persisted — the server always starts stopped and must be re-enabled each session. Each settings category has its own **Reset** button that restores that category's fields to their built-in defaults (Auto theme for Appearance, sessions-left for Layout, the default port for Integrations) without affecting the others; the reset only takes effect once you click **OK**.
+
 ### Registering with GitHub Copilot CLI
 
 With the app running and the MCP server enabled, add it as an HTTP MCP server in your Copilot CLI MCP configuration file:
@@ -185,6 +189,7 @@ HttpTraceAnalyser/
 ├─ CustomColumnsWindow.xaml(.cs) // user-defined header-derived columns
 ├─ FilterWindow.xaml(.cs)      // filter rule editor
 ├─ HighlightsWindow.xaml(.cs)  // highlight rule editor
+├─ AppSettings.cs              // persisted appearance/layout/MCP-port preferences
 ├─ McpHostManager.cs           // starts/stops the in-process MCP HTTP server
 ├─ Mcp/
 │  └─ TraceMcpTools.cs         // MCP tools exposed to GitHub Copilot CLI

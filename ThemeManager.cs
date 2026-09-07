@@ -13,6 +13,14 @@ namespace HttpTraceAnalyser
         Dark,
     }
 
+    /// <summary>User's theme choice: Auto follows the system theme, others force a specific theme.</summary>
+    public enum ThemePreference
+    {
+        Auto,
+        Light,
+        Dark,
+    }
+
     /// <summary>
     /// Detects and tracks the system theme and drives WPF's built-in Fluent
     /// theme (Application.ThemeMode), which themes all standard controls for
