@@ -1,0 +1,104 @@
+<Window x:Class="HttpTraceAnalyser.AppSettingsWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="App Settings" Height="520" Width="760"
+        MinHeight="440" MinWidth="640"
+        WindowStartupLocation="CenterOwner"
+        ResizeMode="CanResizeWithGrip"
+        Background="{DynamicResource ApplicationBackgroundBrush}"
+        Foreground="{DynamicResource TextFillColorPrimaryBrush}">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <Grid Grid.Row="0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="180" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+
+            <Border Grid.Column="0"
+                    Background="{DynamicResource LayerFillColorDefaultBrush}"
+                    BorderBrush="{DynamicResource DividerStrokeColorDefaultBrush}"
+                    BorderThickness="0,0,1,0"
+                    Padding="10,14">
+                <ListBox x:Name="SettingsCategoryList"
+                         SelectionChanged="SettingsCategoryList_SelectionChanged">
+                    <ListBoxItem Content="Appearance" Padding="10,8" />
+                    <ListBoxItem Content="Layout" Padding="10,8" />
+                    <ListBoxItem Content="Integrations" Padding="10,8" />
+                </ListBox>
+            </Border>
+
+            <Grid Grid.Column="1" Margin="24,18,24,12">
+                <ScrollViewer x:Name="AppearancePage" VerticalScrollBarVisibility="Auto">
+                    <StackPanel>
+                        <TextBlock Text="Appearance" FontSize="20" FontWeight="SemiBold" />
+                        <CheckBox x:Name="DarkModeCheckBox" Content="Dark mode" Margin="0,18,0,0" />
+                    </StackPanel>
+                </ScrollViewer>
+
+                <ScrollViewer x:Name="LayoutPage" Visibility="Collapsed"
+                              VerticalScrollBarVisibility="Auto">
+                    <StackPanel>
+                        <TextBlock Text="Layout" FontSize="20" FontWeight="SemiBold" />
+                        <TextBlock Text="Session layout" FontWeight="SemiBold" Margin="0,18,0,4" />
+                        <ComboBox x:Name="ViewLayoutCombo" Width="220" HorizontalAlignment="Left">
+                            <ComboBoxItem Content="Sessions left" />
+                            <ComboBoxItem Content="Sessions top" />
+                        </ComboBox>
+                    </StackPanel>
+                </ScrollViewer>
+
+                <ScrollViewer x:Name="IntegrationsPage" Visibility="Collapsed"
+                              VerticalScrollBarVisibility="Auto">
+                    <StackPanel>
+                        <TextBlock Text="Integrations" FontSize="20" FontWeight="SemiBold" />
+                        <TextBlock Text="Host MCP Server" FontSize="16" FontWeight="SemiBold"
+                                   Margin="0,18,0,0" />
+                        <CheckBox x:Name="HostMcpServerCheckBox"
+                                  Content="Enable the MCP server"
+                                  Margin="0,12,0,0" />
+                        <TextBlock x:Name="McpStatusText" Margin="0,4,0,0"
+                                   Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+
+                        <TextBlock Text="Listening port" FontWeight="SemiBold" Margin="0,14,0,4" />
+                        <TextBlock TextWrapping="Wrap" Margin="0,0,0,6"
+                                   Text="The app hosts an MCP HTTP server on the loopback interface (127.0.0.1). Port changes restart the server when necessary." />
+                        <StackPanel Orientation="Horizontal">
+                            <TextBox x:Name="PortTextBox" Width="100" />
+                            <Button Content="Reset to default" Margin="12,0,0,0"
+                                    Click="ResetPortButton_Click" />
+                        </StackPanel>
+                        <TextBlock x:Name="PortErrorText" Foreground="Red" TextWrapping="Wrap"
+                                   Visibility="Collapsed" Margin="0,4,0,0" />
+
+                        <TextBlock Text="Client endpoint" FontWeight="SemiBold" Margin="0,16,0,4" />
+                        <TextBox x:Name="ClientEndpointTextBox" IsReadOnly="True" Width="280"
+                                 HorizontalAlignment="Left" FontFamily="Consolas" />
+                        <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                            <Button x:Name="CopyClientConfigButton" Content="Copy client configuration"
+                                    Click="CopyClientConfigButton_Click" />
+                            <TextBlock x:Name="CopyStatusText" Margin="10,0,0,0"
+                                       VerticalAlignment="Center"
+                                       Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                        </StackPanel>
+                    </StackPanel>
+                </ScrollViewer>
+            </Grid>
+        </Grid>
+
+        <Border Grid.Row="1"
+                BorderBrush="{DynamicResource DividerStrokeColorDefaultBrush}"
+                BorderThickness="0,1,0,0"
+                Padding="12">
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                <Button Content="OK" Width="80" Margin="0,0,8,0"
+                        Click="OkButton_Click" IsDefault="True" />
+                <Button Content="Cancel" Width="80" IsCancel="True" />
+            </StackPanel>
+        </Border>
+    </Grid>
+</Window>

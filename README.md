@@ -33,7 +33,7 @@ The `ListView` binds to `DataTable.DefaultView`, which gives free **grid virtual
 
 ### Highlighting
 
-`Model/HighlightRule` + `HighlightRuleSet` describe row-colour rules. A rule matches on a column (`Response`, `Method`, `Host`, `Path`, `Url`, `Date`, `Time`) using one of `Equals`, `NotEquals`, `Contains`, `StartsWith`, `Regex`, or `Range` (numeric `min-max`, e.g. `400-599`).
+`Model/HighlightRule` + `HighlightRuleSet` describe row-colour rules. A rule can match any session-grid field, including `Process` and plugin-contributed fields, using one of `Equals`, `NotEquals`, `Contains`, `StartsWith`, `Regex`, or `Range` (numeric `min-max`, e.g. `400-599`).
 
 Defaults ship with:
 
@@ -41,13 +41,19 @@ Defaults ship with:
 - `200-299` → light green
 - `400-599` → light red
 
-Rules are managed from **Highlights** in the toolbar. First matching enabled rule wins; the resulting `Brush` is stored in the row's `RowBackground` / `RowForeground` columns and consumed by the `ListView` `ItemContainerStyle`.
+Rules are managed from **Highlights** in the toolbar, which opens a dedicated editor. Edits are made to a working copy; **OK** commits them and **Cancel** discards them. **Load...** and **Save As...** import/export a rule set as JSON; **Set Default** persists the current working copy as the set loaded at startup; **Reset** replaces the working copy with the saved default (or, with Shift held, the built-in factory defaults). First matching enabled rule wins; the resulting `Brush` is stored in the row's `RowBackground` / `RowForeground` columns and consumed by the `ListView` `ItemContainerStyle`.
 
 ### Filtering
 
-`Model/FilterRule` + `FilterRuleSet` build a `DataView.RowFilter` expression from a list of rules. Each rule contributes `Field`, `Comparator` (`Equals`, `NotEquals`, `Contains`, `StartsWith`, `Range`), a `Value`, and a `Combinator` (`AND` / `OR`) applied left-to-right.
+`Model/FilterRule` + `FilterRuleSet` build a `DataView.RowFilter` expression from a list of rules. Rules support every session-grid field, including dynamically named fields. Each rule contributes `Field`, `Comparator` (`Equals`, `NotEquals`, `Contains`, `StartsWith`, `Range`), a `Value`, and a `Combinator` (`AND` / `OR`) applied left-to-right.
 
-Toggle the filter panel with the **Filter** toolbar button. Rules can be added/removed live; the trace view re-filters immediately.
+Rules are managed from **Filter** in the toolbar, which opens a dedicated editor with the same working-copy/OK/Cancel/Load/Save As/Set Default pattern as Highlights.
+
+### Custom columns
+
+Use **Custom Columns** in the **View** toolbar group to derive session columns from request or response headers. Header names and optional value extraction patterns use regular expressions; when a value pattern contains a capture group, the first group becomes the displayed value. Edits are made to a working copy; **OK** commits them and **Cancel** discards them. Use **Load...** and **Save As...** to import or export custom column configurations as JSON files.
+
+Definitions are saved in `%LOCALAPPDATA%\HttpTraceAnalyser\custom-columns.json` and applied to both new and currently loaded traces. User-defined columns share the session column catalog with built-in and plugin-contributed fields, while reserved-name validation prevents collisions. They are available in the column chooser, filter and highlight editors, and cell context menu actions.
 
 ### Viewers
 
@@ -93,11 +99,11 @@ HttpTraceAnalyser can host an in-process [Model Context Protocol](https://modelc
 
 ### Enabling the server
 
-1. Open a trace and click **Enable** in the **MCP Server** ribbon group (rightmost group in the toolbar). The button switches to **Disable** once the server is listening.
+1. Open **App Settings**, select **Enable the MCP server**, and click **OK**.
 2. The server binds to `http://127.0.0.1:5088` by default (loopback only — it is not reachable from other machines).
-3. Click **Disable** (or close the app) to stop it. The server is also stopped automatically on application exit even if left enabled.
+3. Clear **Enable the MCP server** in **App Settings** (or close the app) to stop it. The server is also stopped automatically on application exit even if left enabled.
 
-Click **Settings** (cog icon) in the same ribbon group to change the listening port (the server must be disabled to apply a new port) and to view the GitHub Copilot CLI configuration snippet.
+The **Host MCP Server** section in **App Settings** also changes the listening port and provides a button to copy the generated MCP client configuration. Changing the port restarts an enabled server automatically.
 
 ### Registering with GitHub Copilot CLI
 
@@ -174,7 +180,10 @@ Or open `HttpTraceAnalyser.slnx` in Visual Studio 2026 (or newer) and press **F5
 HttpTraceAnalyser/
 ├─ HttpTraceAnalyser.csproj    // net10.0-windows, WPF
 ├─ App.xaml / App.xaml.cs      // application entry point
-├─ MainWindow.xaml(.cs)        // trace list, viewers, toolbar, filter panel
+├─ MainWindow.xaml(.cs)        // trace list, viewers, toolbar
+├─ AppSettingsWindow.xaml(.cs) // view, theme, and hosted MCP server settings
+├─ CustomColumnsWindow.xaml(.cs) // user-defined header-derived columns
+├─ FilterWindow.xaml(.cs)      // filter rule editor
 ├─ HighlightsWindow.xaml(.cs)  // highlight rule editor
 ├─ McpHostManager.cs           // starts/stops the in-process MCP HTTP server
 ├─ Mcp/
@@ -182,12 +191,16 @@ HttpTraceAnalyser/
 └─ Model/
    ├─ HttpMessage.cs           // HttpMessage / HttpRequest / HttpResponse
    ├─ HttpTraceFile.cs         // DataTable-backed base + loader registry
+  ├─ CustomColumnDefinition.cs // custom column definitions, catalog, persistence
    ├─ SazTraceFile.cs          // Fiddler .saz loader
    ├─ HarTraceFile.cs          // HAR 1.2 loader
    ├─ EtlTraceFile.cs          // ETW .etl loader
    ├─ EwsTraceFile.cs          // EWS .trace loader
    ├─ HighlightRule.cs         // row-highlighting rules
    ├─ FilterRule.cs            // DataView filter rules
+   ├─ RulePersistence.cs       // shared versioned JSON persistence for filter/highlight rules
+   ├─ JsonConfigurationPersistence.cs // shared JSON read/write engine (options, atomic save, validation)
+   ├─ DataGridThemeHelper.cs   // shared themed-ComboBox-column styling for the rule editors
    ├─ RestAnalyzer.cs          // REST API URL analysis for the REST tab
    ├─ SoapAnalyzer.cs          // SOAP envelope/header analysis for the SOAP tab
    └─ MapiHttpDecoder.cs       // minimal MAPI/HTTP decoder for the MAPI tab

@@ -1,5 +1,7 @@
 using System;
+using System.Collections.Generic;
 using System.Globalization;
+using System.Linq;
 using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
@@ -17,6 +19,7 @@ namespace HttpTraceAnalyser
     {
         public static IValueConverter ColorBrushConverter { get; } = new ColorToBrushConverter();
 
+        private readonly System.Collections.ObjectModel.ObservableCollection<HighlightRule> _rules;
         private readonly uint[] _customColors = new uint[16];
         private Point _dragStartPoint;
         private HighlightRule? _draggedRule;
@@ -30,8 +33,10 @@ namespace HttpTraceAnalyser
         public HighlightsWindow()
         {
             InitializeComponent();
-            ApplyThemedComboBoxColumnStyles();
-            RulesGrid.ItemsSource = HighlightRuleSet.Rules;
+            DataGridThemeHelper.ApplyThemedComboBoxColumnStyles(this, RulesGrid);
+            _rules = new System.Collections.ObjectModel.ObservableCollection<HighlightRule>(
+                HighlightRuleSet.Rules.Select(rule => rule.Clone()));
+            RulesGrid.ItemsSource = _rules;
         }
 
         private void ApplyThemedComboBoxColumnStyles()
@@ -55,7 +60,7 @@ namespace HttpTraceAnalyser
 
         private void AddButton_Click(object sender, RoutedEventArgs e)
         {
-            HighlightRuleSet.Rules.Add(new HighlightRule
+            _rules.Add(new HighlightRule
             {
                 Column = HighlightColumn.Response,
                 Operator = HighlightOperator.Equals,
@@ -66,14 +71,14 @@ namespace HttpTraceAnalyser
 
         private void RemoveButton_Click(object sender, RoutedEventArgs e)
         {
-            var selected = new System.Collections.Generic.List<HighlightRule>();
+            var selected = new List<HighlightRule>();
             foreach (var item in RulesGrid.SelectedItems)
             {
                 if (item is HighlightRule rule)
                     selected.Add(rule);
             }
             foreach (var rule in selected)
-                HighlightRuleSet.Rules.Remove(rule);
+                _rules.Remove(rule);
         }
 
         private void RuleDragHandle_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
@@ -140,26 +145,26 @@ namespace HttpTraceAnalyser
             if (e.Data.GetData(typeof(HighlightRule)) is not HighlightRule rule)
                 return;
 
-            int oldIndex = HighlightRuleSet.Rules.IndexOf(rule);
+            int oldIndex = _rules.IndexOf(rule);
             if (oldIndex < 0)
                 return;
 
-            int insertionIndex = HighlightRuleSet.Rules.Count;
+            int insertionIndex = _rules.Count;
             var row = FindVisualAncestor<DataGridRow>(e.OriginalSource as DependencyObject);
             if (row?.Item is HighlightRule targetRule)
             {
-                insertionIndex = HighlightRuleSet.Rules.IndexOf(targetRule);
+                insertionIndex = _rules.IndexOf(targetRule);
                 if (e.GetPosition(row).Y > row.ActualHeight / 2)
                     insertionIndex++;
             }
 
             if (insertionIndex > oldIndex)
                 insertionIndex--;
-            insertionIndex = Math.Clamp(insertionIndex, 0, HighlightRuleSet.Rules.Count - 1);
+            insertionIndex = Math.Clamp(insertionIndex, 0, _rules.Count - 1);
 
             if (insertionIndex != oldIndex)
             {
-                HighlightRuleSet.Rules.Move(oldIndex, insertionIndex);
+                _rules.Move(oldIndex, insertionIndex);
                 RulesGrid.SelectedItem = rule;
                 RulesGrid.ScrollIntoView(rule);
             }
@@ -237,10 +242,12 @@ namespace HttpTraceAnalyser
                     $"Replace the current highlight rules with the {defaultDescription}?",
                     "Reset Highlights", MessageBoxButton.YesNo, MessageBoxImage.Question) == MessageBoxResult.Yes)
             {
-                if (useFactoryDefaults)
-                    HighlightRuleSet.ResetToFactoryDefaults();
-                else
-                    HighlightRuleSet.ResetToDefault();
+                var defaults = useFactoryDefaults
+                    ? HighlightRuleSet.GetFactoryDefaults()
+                    : HighlightRuleSet.GetSavedDefaultOrFactory();
+                _rules.Clear();
+                foreach (var rule in defaults)
+                    _rules.Add(rule);
             }
         }
 
@@ -257,7 +264,10 @@ namespace HttpTraceAnalyser
 
             try
             {
-                HighlightRuleSet.Load(dialog.FileName);
+                var rules = RulePersistence.LoadHighlights(dialog.FileName);
+                _rules.Clear();
+                foreach (var rule in rules)
+                    _rules.Add(rule);
             }
             catch (Exception ex)
             {
@@ -268,6 +278,9 @@ namespace HttpTraceAnalyser
 
         private void SaveButton_Click(object sender, RoutedEventArgs e)
         {
+            RulesGrid.CommitEdit();
+            RulesGrid.CommitEdit();
+
             var dialog = new Microsoft.Win32.SaveFileDialog
             {
                 Title = "Save highlight rules",
@@ -281,7 +294,7 @@ namespace HttpTraceAnalyser
 
             try
             {
-                HighlightRuleSet.Save(dialog.FileName);
+                RulePersistence.SaveHighlights(dialog.FileName, _rules);
             }
             catch (Exception ex)
             {
@@ -292,6 +305,9 @@ namespace HttpTraceAnalyser
 
         private void SetDefaultButton_Click(object sender, RoutedEventArgs e)
         {
+            RulesGrid.CommitEdit();
+            RulesGrid.CommitEdit();
+
             if (MessageBox.Show(this,
                     "Overwrite the default highlight rules with the current rules? These rules will load when the application starts.",
                     "Set Default Highlights", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes)
@@ -301,13 +317,22 @@ namespace HttpTraceAnalyser
 
             try
             {
-                HighlightRuleSet.SaveAsDefault();
+                RulePersistence.SaveHighlights(RulePersistence.HighlightDefaultPath, _rules);
             }
             catch (Exception ex)
             {
                 MessageBox.Show(this, $"Failed to save the default highlight rules:\n{ex.Message}",
                     "Set Default Highlights", MessageBoxButton.OK, MessageBoxImage.Error);
             }
+        }
+
+        private void OkButton_Click(object sender, RoutedEventArgs e)
+        {
+            RulesGrid.CommitEdit();
+            RulesGrid.CommitEdit();
+
+            HighlightRuleSet.Replace(_rules);
+            DialogResult = true;
         }
 
         private void ColorPickerButton_Click(object sender, RoutedEventArgs e)

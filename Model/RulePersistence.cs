@@ -2,22 +2,12 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Text.Json;
-using System.Text.Json.Serialization;
 using System.Windows.Media;
 
 namespace HttpTraceAnalyser.Model
 {
     internal static class RulePersistence
     {
-        private static readonly JsonSerializerOptions JsonOptions = new()
-        {
-            WriteIndented = true,
-            UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow,
-            Converters = { new JsonStringEnumConverter() },
-        };
-
-        private const int CurrentVersion = 1;
         private const string HighlightDocumentType = "highlights";
         private const string FilterDocumentType = "filters";
 
@@ -39,7 +29,7 @@ namespace HttpTraceAnalyser.Model
             var document = new HighlightRuleDocument
             {
                 DocumentType = HighlightDocumentType,
-                Version = CurrentVersion,
+                Version = JsonConfigurationPersistence.CurrentVersion,
                 Rules = rules.Select(rule => new HighlightRuleData
                 {
                     IsEnabled = rule.IsEnabled,
@@ -51,21 +41,22 @@ namespace HttpTraceAnalyser.Model
                     ForegroundColor = rule.ForegroundColor is Color color ? FormatColor(color) : null,
                 }).ToList(),
             };
-            Save(path, document);
+            JsonConfigurationPersistence.Save(path, document);
         }
 
         internal static List<HighlightRule> LoadHighlights(string path)
         {
-            var document = Load<HighlightRuleDocument>(path);
-            ValidateDocument(document.DocumentType, HighlightDocumentType, document.Version);
+            var document = JsonConfigurationPersistence.Load<HighlightRuleDocument>(path, "rule file");
+            JsonConfigurationPersistence.ValidateDocument(
+                document.DocumentType, HighlightDocumentType, document.Version, "highlights rule file");
             if (document.Rules is null)
                 throw new InvalidDataException("The highlight rule file does not contain a rules collection.");
 
             return document.Rules.Select(rule => new HighlightRule
             {
                 IsEnabled = rule.IsEnabled,
-                Column = ValidateEnum(rule.Column, nameof(rule.Column)),
-                Operator = ValidateEnum(rule.Operator, nameof(rule.Operator)),
+                Column = JsonConfigurationPersistence.ValidateEnum(rule.Column, nameof(rule.Column)),
+                Operator = JsonConfigurationPersistence.ValidateEnum(rule.Operator, nameof(rule.Operator)),
                 Value = rule.Value ?? string.Empty,
                 CustomFieldName = rule.CustomFieldName ?? string.Empty,
                 BackgroundColor = ParseColor(rule.BackgroundColor),
@@ -80,7 +71,7 @@ namespace HttpTraceAnalyser.Model
             var document = new FilterRuleDocument
             {
                 DocumentType = FilterDocumentType,
-                Version = CurrentVersion,
+                Version = JsonConfigurationPersistence.CurrentVersion,
                 Rules = rules.Select(rule => new FilterRuleData
                 {
                     Combinator = rule.Combinator,
@@ -90,61 +81,25 @@ namespace HttpTraceAnalyser.Model
                     CustomFieldName = rule.CustomFieldName,
                 }).ToList(),
             };
-            Save(path, document);
+            JsonConfigurationPersistence.Save(path, document);
         }
 
         internal static List<FilterRule> LoadFilters(string path)
         {
-            var document = Load<FilterRuleDocument>(path);
-            ValidateDocument(document.DocumentType, FilterDocumentType, document.Version);
+            var document = JsonConfigurationPersistence.Load<FilterRuleDocument>(path, "rule file");
+            JsonConfigurationPersistence.ValidateDocument(
+                document.DocumentType, FilterDocumentType, document.Version, "filters rule file");
             if (document.Rules is null)
                 throw new InvalidDataException("The filter rule file does not contain a rules collection.");
 
             return document.Rules.Select(rule => new FilterRule
             {
-                Combinator = ValidateEnum(rule.Combinator, nameof(rule.Combinator)),
-                Field = ValidateEnum(rule.Field, nameof(rule.Field)),
-                Comparator = ValidateEnum(rule.Comparator, nameof(rule.Comparator)),
+                Combinator = JsonConfigurationPersistence.ValidateEnum(rule.Combinator, nameof(rule.Combinator)),
+                Field = JsonConfigurationPersistence.ValidateEnum(rule.Field, nameof(rule.Field)),
+                Comparator = JsonConfigurationPersistence.ValidateEnum(rule.Comparator, nameof(rule.Comparator)),
                 Value = rule.Value ?? string.Empty,
                 CustomFieldName = rule.CustomFieldName ?? string.Empty,
             }).ToList();
-        }
-
-        private static void Save<T>(string path, T document)
-        {
-            var fullPath = Path.GetFullPath(path);
-            var directory = Path.GetDirectoryName(fullPath)!;
-            Directory.CreateDirectory(directory);
-
-            var temporaryPath = Path.Combine(directory, $".{Path.GetFileName(fullPath)}.{Guid.NewGuid():N}.tmp");
-            try
-            {
-                using (var stream = new FileStream(temporaryPath, FileMode.CreateNew, FileAccess.Write, FileShare.None))
-                {
-                    JsonSerializer.Serialize(stream, document, JsonOptions);
-                    stream.Flush(flushToDisk: true);
-                }
-
-                File.Move(temporaryPath, fullPath, overwrite: true);
-            }
-            finally
-            {
-                File.Delete(temporaryPath);
-            }
-        }
-
-        private static T Load<T>(string path)
-        {
-            try
-            {
-                using var stream = File.OpenRead(path);
-                return JsonSerializer.Deserialize<T>(stream, JsonOptions)
-                    ?? throw new InvalidDataException("The rule file is empty or invalid.");
-            }
-            catch (JsonException ex)
-            {
-                throw new InvalidDataException("The rule file contains invalid JSON or an unsupported schema.", ex);
-            }
         }
 
         private static string FormatColor(Color color)
@@ -158,21 +113,6 @@ namespace HttpTraceAnalyser.Model
                 throw new InvalidDataException($"Invalid colour value '{value}'.");
             }
             return color;
-        }
-
-        private static void ValidateDocument(string? actualType, string expectedType, int version)
-        {
-            if (!string.Equals(actualType, expectedType, StringComparison.Ordinal))
-                throw new InvalidDataException($"Expected a {expectedType} rule file, but found '{actualType ?? "an unspecified type"}'.");
-            if (version != CurrentVersion)
-                throw new InvalidDataException($"Rule file version {version} is not supported.");
-        }
-
-        private static T ValidateEnum<T>(T value, string propertyName) where T : struct, Enum
-        {
-            if (!Enum.IsDefined(value))
-                throw new InvalidDataException($"Invalid {propertyName} value '{value}'.");
-            return value;
         }
 
         private sealed class HighlightRuleDocument

@@ -71,6 +71,7 @@ namespace HttpTraceAnalyser.Model
         // Chosen to be characters that must not appear inside header names/values.
         private const char HeaderPairDelimiter = '\u001F';   // unit separator
         private const char HeaderRecordDelimiter = '\u001E'; // record separator
+        private const string UserDefinedColumnProperty = "UserDefinedColumn";
 
         // Extended fields registered by plugins (see PluginManager). Keyed by field name.
         // Applied to every trace's schema on construction, and populated per-row in AddRow.
@@ -85,6 +86,7 @@ namespace HttpTraceAnalyser.Model
             _messages = CreateSchema();
             foreach (var field in ExtendedFieldsByName.Values)
                 _messages.Columns.Add(field.Name, field.FieldType);
+            AddUserDefinedColumns(_messages);
         }
 
         /// <summary>
@@ -102,6 +104,7 @@ namespace HttpTraceAnalyser.Model
                 throw new InvalidOperationException($"Extended field name '{field.Name}' collides with a built-in column.");
             if (!ExtendedFieldsByName.TryAdd(field.Name, field))
                 throw new InvalidOperationException($"Extended field '{field.Name}' is already registered.");
+            TraceColumnCatalog.Refresh();
         }
 
         /// <summary>Names of all currently registered extended (plugin-contributed) fields.</summary>
@@ -110,6 +113,22 @@ namespace HttpTraceAnalyser.Model
         /// <summary>Display name for a registered extended field, or the field name itself if not found.</summary>
         public static string GetExtendedFieldDisplayName(string name)
             => ExtendedFieldsByName.TryGetValue(name, out var field) ? field.DisplayName : name;
+
+        internal static bool IsNumericField(string name)
+        {
+            if (name is TraceDataSchema.Index or TraceDataSchema.Response or TraceDataSchema.Latency)
+                return true;
+            if (!ExtendedFieldsByName.TryGetValue(name, out var field))
+                return false;
+
+            var type = Nullable.GetUnderlyingType(field.FieldType) ?? field.FieldType;
+            return type == typeof(byte) || type == typeof(sbyte) ||
+                type == typeof(short) || type == typeof(ushort) ||
+                type == typeof(int) || type == typeof(uint) ||
+                type == typeof(long) || type == typeof(ulong) ||
+                type == typeof(float) || type == typeof(double) ||
+                type == typeof(decimal);
+        }
 
         public string FilePath { get; }
 
@@ -240,8 +259,74 @@ namespace HttpTraceAnalyser.Model
                 row[field.Name] = value ?? DBNull.Value;
             }
 
+            PopulateUserDefinedColumns(row, request.Headers, response?.Headers);
+
             ApplyHighlight(row);
             _messages.Rows.Add(row);
+        }
+
+        /// <summary>Rebuilds mutable user-defined columns and values on the loaded trace.</summary>
+        public void RefreshUserDefinedColumns()
+        {
+            var definitions = CustomColumnSet.Columns
+                .Where(column => !string.IsNullOrWhiteSpace(column.Name))
+                .GroupBy(column => column.Name, StringComparer.OrdinalIgnoreCase)
+                .Select(group => group.First())
+                .ToDictionary(column => column.Name, StringComparer.OrdinalIgnoreCase);
+
+            foreach (DataColumn column in _messages.Columns.Cast<DataColumn>().ToArray())
+            {
+                if (column.ExtendedProperties.ContainsKey(UserDefinedColumnProperty) &&
+                    !definitions.ContainsKey(column.ColumnName))
+                {
+                    _messages.Columns.Remove(column);
+                }
+            }
+
+            foreach (var definition in definitions.Values)
+            {
+                if (_messages.Columns.Contains(definition.Name))
+                    continue;
+
+                var column = _messages.Columns.Add(definition.Name, typeof(string));
+                column.ExtendedProperties[UserDefinedColumnProperty] = true;
+            }
+
+            foreach (DataRow row in _messages.Rows)
+            {
+                var requestHeaders = DeserializeHeaders(row[TraceDataSchema.RequestHeaders] as string);
+                var responseHeaders = DeserializeHeaders(row[TraceDataSchema.ResponseHeaders] as string);
+                PopulateUserDefinedColumns(row, requestHeaders, responseHeaders);
+            }
+
+            RecomputeHighlights();
+        }
+
+        private static void AddUserDefinedColumns(DataTable table)
+        {
+            foreach (var definition in CustomColumnSet.Columns)
+            {
+                if (string.IsNullOrWhiteSpace(definition.Name) || table.Columns.Contains(definition.Name))
+                    continue;
+
+                var column = table.Columns.Add(definition.Name, typeof(string));
+                column.ExtendedProperties[UserDefinedColumnProperty] = true;
+            }
+        }
+
+        private static void PopulateUserDefinedColumns(
+            DataRow row,
+            IReadOnlyList<KeyValuePair<string, string>>? requestHeaders,
+            IReadOnlyList<KeyValuePair<string, string>>? responseHeaders)
+        {
+            foreach (var definition in CustomColumnSet.Columns)
+            {
+                if (row.Table.Columns.Contains(definition.Name) &&
+                    row.Table.Columns[definition.Name]!.ExtendedProperties.ContainsKey(UserDefinedColumnProperty))
+                {
+                    row[definition.Name] = definition.ExtractValue(requestHeaders, responseHeaders);
+                }
+            }
         }
 
         /// <summary>Returns the first header value matching <paramref name="name"/> (case-insensitive), or null.</summary>

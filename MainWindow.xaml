@@ -22,23 +22,6 @@
         <KeyBinding Key="F" Modifiers="Control" Command="ApplicationCommands.Find" />
     </Window.InputBindings>
     <Window.Resources>
-        <BooleanToVisibilityConverter x:Key="BoolToVis" />
-        <ObjectDataProvider x:Key="FilterFieldValues" MethodName="GetValues" ObjectType="{x:Type sys:Enum}">
-            <ObjectDataProvider.MethodParameters>
-                <x:Type TypeName="model:FilterField" />
-            </ObjectDataProvider.MethodParameters>
-        </ObjectDataProvider>
-        <ObjectDataProvider x:Key="FilterComparatorValues" MethodName="GetValues" ObjectType="{x:Type sys:Enum}">
-            <ObjectDataProvider.MethodParameters>
-                <x:Type TypeName="model:FilterComparator" />
-            </ObjectDataProvider.MethodParameters>
-        </ObjectDataProvider>
-        <ObjectDataProvider x:Key="FilterCombinatorValues" MethodName="GetValues" ObjectType="{x:Type sys:Enum}">
-            <ObjectDataProvider.MethodParameters>
-                <x:Type TypeName="model:FilterCombinator" />
-            </ObjectDataProvider.MethodParameters>
-        </ObjectDataProvider>
-
         <!-- Ribbon-style toolbar resources -->
         <Style x:Key="RibbonButtonStyle" TargetType="{x:Type ButtonBase}">
             <Setter Property="Margin" Value="2,2" />
@@ -114,11 +97,12 @@
                     BorderBrush="{DynamicResource DividerStrokeColorDefaultBrush}"
                     BorderThickness="0,0,0,1">
                 <DockPanel LastChildFill="True">
-                    <ToggleButton x:Name="DarkModeToggle" DockPanel.Dock="Right"
-                                  Content="Dark mode" Margin="4,3" Padding="10,3"
-                                  VerticalAlignment="Center"
-                                  Checked="DarkModeToggle_Changed"
-                                  Unchecked="DarkModeToggle_Changed" />
+                    <Button x:Name="AppSettingsButton" DockPanel.Dock="Right"
+                            Content="App Settings" Tag="&#xE713;"
+                            Margin="4,3"
+                            VerticalAlignment="Center"
+                            Style="{StaticResource RibbonButtonStyle}"
+                            Click="AppSettingsButton_Click" />
                     <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                         <!-- File group -->
                         <Border Style="{StaticResource RibbonGroupStyle}">
@@ -133,26 +117,31 @@
                             </StackPanel>
                         </Border>
 
-                        <!-- Options group -->
-                        <Border Style="{StaticResource RibbonGroupStyle}">
-                            <StackPanel Orientation="Vertical">
-                                <StackPanel Orientation="Horizontal">
-                                    <Button x:Name="HighlightsButton" Content="Highlights"
-                                            Tag="&#xE12F;"
-                                            Style="{StaticResource RibbonButtonStyle}"
-                                            Click="HighlightsButton_Click" />
-                                </StackPanel>
-                                <TextBlock Text="Options" Style="{StaticResource RibbonGroupLabelStyle}" />
-                            </StackPanel>
-                        </Border>
-
                         <!-- View group -->
                         <Border Style="{StaticResource RibbonGroupStyle}">
                             <StackPanel Orientation="Vertical">
                                 <StackPanel Orientation="Horizontal">
-                                    <ToggleButton x:Name="FilterButton" Content="Filter"
-                                                  Tag="&#xE71C;"
-                                                  Style="{StaticResource RibbonToggleButtonStyle}" />
+                                    <Button x:Name="FilterButton" Content="Filter"
+                                            Tag="&#xE71C;"
+                                            Style="{StaticResource RibbonButtonStyle}"
+                                            Click="FilterButton_Click" />
+                                    <Button x:Name="HighlightsButton" Content="Highlights"
+                                            Tag="&#xE12F;"
+                                            Style="{StaticResource RibbonButtonStyle}"
+                                            Click="HighlightsButton_Click" />
+                                        <Button x:Name="CustomColumnsButton" Content="Custom Columns"
+                                            Tag="&#xF0E2;"
+                                            Style="{StaticResource RibbonButtonStyle}"
+                                            Click="CustomColumnsButton_Click" />
+                                </StackPanel>
+                                <TextBlock Text="View" Style="{StaticResource RibbonGroupLabelStyle}" />
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Navigation group -->
+                        <Border Style="{StaticResource RibbonGroupStyle}" BorderThickness="0">
+                            <StackPanel Orientation="Vertical">
+                                <StackPanel Orientation="Horizontal">
                                     <Button x:Name="PreviousErrorButton" Content="Previous Error"
                                             Tag="&#xE74A;"
                                             Style="{StaticResource RibbonButtonStyle}"
@@ -161,33 +150,8 @@
                                             Tag="&#xE74B;"
                                             Style="{StaticResource RibbonButtonStyle}"
                                             Click="NextErrorButton_Click" />
-                                    <ComboBox x:Name="ViewLayoutCombo"
-                                              Width="150" Margin="6,2,2,2"
-                                              VerticalAlignment="Center"
-                                              SelectionChanged="ViewLayoutCombo_SelectionChanged">
-                                        <ComboBoxItem Content="Sessions left" />
-                                        <ComboBoxItem Content="Sessions top" />
-                                    </ComboBox>
                                 </StackPanel>
-                                <TextBlock Text="View" Style="{StaticResource RibbonGroupLabelStyle}" />
-                            </StackPanel>
-                        </Border>
-
-                        <!-- MCP Server group -->
-                        <Border Style="{StaticResource RibbonGroupStyle}" BorderThickness="0">
-                            <StackPanel Orientation="Vertical">
-                                <StackPanel Orientation="Horizontal">
-                                    <ToggleButton x:Name="McpServerButton" Content="Enable"
-                                                  Tag="&#xE8CD;"
-                                                  Style="{StaticResource RibbonToggleButtonStyle}"
-                                                  Checked="McpServerButton_Checked"
-                                                  Unchecked="McpServerButton_Unchecked" />
-                                    <Button Content="Settings"
-                                            Tag="&#xE713;"
-                                            Style="{StaticResource RibbonButtonStyle}"
-                                            Click="McpSettingsButton_Click" />
-                                </StackPanel>
-                                <TextBlock Text="MCP Server" Style="{StaticResource RibbonGroupLabelStyle}" />
+                                <TextBlock Text="Navigation" Style="{StaticResource RibbonGroupLabelStyle}" />
                             </StackPanel>
                         </Border>
                     </StackPanel>
@@ -209,86 +173,10 @@
             <Grid x:Name="SessionsPane" Grid.Row="0" Grid.Column="0">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto" />
-                    <RowDefinition Height="Auto" />
                     <RowDefinition Height="*" />
                 </Grid.RowDefinitions>
 
-                <Border x:Name="FilterEditor" Grid.Row="0"
-                        Background="{DynamicResource LayerFillColorDefaultBrush}"
-                        BorderBrush="{DynamicResource DividerStrokeColorDefaultBrush}"
-                        BorderThickness="0,0,0,1"
-                        Padding="6"
-                        Visibility="{Binding IsChecked, ElementName=FilterButton, Converter={StaticResource BoolToVis}}">
-                    <StackPanel>
-                        <Grid>
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="Auto" />
-                                <ColumnDefinition Width="Auto" />
-                                <ColumnDefinition Width="Auto" />
-                                <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="Auto" />
-                            </Grid.ColumnDefinitions>
-                            <ComboBox x:Name="RuleCombinatorCombo" Grid.Column="0"
-                                      Width="60" Margin="0,0,4,0"
-                                      ItemsSource="{Binding Source={StaticResource FilterCombinatorValues}}"
-                                      SelectedIndex="0" />
-                            <ComboBox x:Name="RuleFieldCombo" Grid.Column="1"
-                                      Width="90" Margin="0,0,4,0"
-                                      ItemsSource="{Binding Source={StaticResource FilterFieldValues}}"
-                                      SelectedIndex="0" />
-                            <ComboBox x:Name="RuleComparatorCombo" Grid.Column="2"
-                                      Width="110" Margin="0,0,4,0"
-                                      ItemsSource="{Binding Source={StaticResource FilterComparatorValues}}"
-                                      SelectedIndex="0" />
-                            <TextBox x:Name="RuleValueText" Grid.Column="3" Margin="0,0,4,0"
-                                     VerticalContentAlignment="Center" />
-                            <Button Grid.Column="4" Content="Add" MinWidth="60" Click="AddRule_Click" />
-                        </Grid>
-
-                        <ListBox x:Name="ActiveFiltersList" Margin="0,6,0,0" MaxHeight="120"
-                                 HorizontalContentAlignment="Stretch">
-                            <ListBox.ItemTemplate>
-                                <DataTemplate>
-                                    <Grid>
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="60" />
-                                            <ColumnDefinition Width="90" />
-                                            <ColumnDefinition Width="110" />
-                                            <ColumnDefinition Width="*" />
-                                            <ColumnDefinition Width="Auto" />
-                                        </Grid.ColumnDefinitions>
-                                        <ComboBox Grid.Column="0"
-                                                  ItemsSource="{Binding Source={StaticResource FilterCombinatorValues}}"
-                                                  SelectedItem="{Binding Combinator}"
-                                                  FontStyle="Italic" VerticalAlignment="Center" />
-                                        <ComboBox Grid.Column="1"
-                                                  ItemsSource="{Binding Source={StaticResource FilterFieldValues}}"
-                                                  SelectedItem="{Binding Field}"
-                                                  FontWeight="Bold" VerticalAlignment="Center" />
-                                        <ComboBox Grid.Column="2"
-                                                  ItemsSource="{Binding Source={StaticResource FilterComparatorValues}}"
-                                                  SelectedItem="{Binding Comparator}"
-                                                  VerticalAlignment="Center" />
-                                        <TextBox Grid.Column="3" Text="{Binding Value, UpdateSourceTrigger=PropertyChanged}"
-                                                 VerticalAlignment="Center" VerticalContentAlignment="Center" />
-                                        <Button Grid.Column="4" Content="&#x2715;" Padding="6,0"
-                                                Click="RemoveRule_Click" Tag="{Binding}" />
-                                    </Grid>
-                                </DataTemplate>
-                            </ListBox.ItemTemplate>
-                        </ListBox>
-
-                        <StackPanel Orientation="Horizontal" Margin="0,4,0,0"
-                                    HorizontalAlignment="Right">
-                            <Button Content="Load..." Click="LoadFilterRules_Click" MinWidth="70" Margin="0,0,4,0" />
-                            <Button Content="Save..." Click="SaveFilterRules_Click" MinWidth="70" Margin="0,0,4,0" />
-                            <Button Content="Set Default" Click="SetDefaultFilterRules_Click" MinWidth="90" Margin="0,0,4,0" />
-                            <Button Content="Clear all" Click="ClearRules_Click" MinWidth="70" />
-                        </StackPanel>
-                    </StackPanel>
-                </Border>
-
-                <Border x:Name="FindSessionsBar" Grid.Row="1"
+                <Border x:Name="FindSessionsBar" Grid.Row="0"
                     Background="{DynamicResource LayerFillColorDefaultBrush}"
                     BorderBrush="{DynamicResource DividerStrokeColorDefaultBrush}"
                     BorderThickness="0,0,0,1"
@@ -321,7 +209,7 @@
                     </DockPanel>
                 </Border>
 
-                <ListView x:Name="RequestList" Grid.Row="2"
+                <ListView x:Name="RequestList" Grid.Row="1"
                           SelectionMode="Extended"
                           SelectionChanged="RequestList_SelectionChanged"
                           PreviewMouseRightButtonDown="RequestList_PreviewMouseRightButtonDown"
@@ -468,7 +356,7 @@
                                                         DisplayMemberBinding="{Binding XRequestId}" />
                                     </MenuItem.Tag>
                                 </MenuItem>
-                                <Separator />
+                                <Separator x:Name="ColumnActionsSeparator" />
                                 <MenuItem Header="Auto-size Columns" Click="AutoSizeColumns_Click" />
                             </ContextMenu>
                         </GridView.ColumnHeaderContextMenu>

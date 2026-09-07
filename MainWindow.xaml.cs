@@ -62,6 +62,9 @@ namespace HttpTraceAnalyser
         private GridViewColumn? _sortColumn;
         private ListSortDirection? _sortDirection;
         private readonly Dictionary<GridViewColumn, string> _originalHeaders = new();
+        private readonly Dictionary<string, GridViewColumn> _userDefinedGridColumns =
+            new(StringComparer.OrdinalIgnoreCase);
+        private readonly List<MenuItem> _userDefinedColumnMenuItems = new();
 
         private const string AscendingArrow = " \u25B2";  // ▲
         private const string DescendingArrow = " \u25BC"; // ▼
@@ -129,6 +132,7 @@ namespace HttpTraceAnalyser
             // Add grid columns + column-chooser entries for any fields contributed by
             // plugins loaded during App.OnStartup (see Model/Extensibility/PluginManager).
             AddExtendedFieldColumns();
+            RebuildUserDefinedGridColumns();
 
             // Show which extended (plugin) parsers were loaded/failed on the Summary tab
             // as soon as the window opens, before any trace file is loaded.
@@ -143,14 +147,13 @@ namespace HttpTraceAnalyser
 
             HighlightRuleSet.RulesChanged += OnHighlightRulesChanged;
             FilterRuleSet.FiltersChanged += OnFilterRulesChanged;
-            ActiveFiltersList.ItemsSource = FilterRuleSet.Rules;
-            DarkModeToggle.IsChecked = ThemeManager.Current == AppTheme.Dark;
-            ViewLayoutCombo.SelectedIndex = 0;
+            CustomColumnSet.ColumnsChanged += OnCustomColumnsChanged;
             ThemeManager.ThemeChanged += OnThemeChanged;
             Closed += (_, _) =>
             {
                 HighlightRuleSet.RulesChanged -= OnHighlightRulesChanged;
                 FilterRuleSet.FiltersChanged -= OnFilterRulesChanged;
+                CustomColumnSet.ColumnsChanged -= OnCustomColumnsChanged;
                 ThemeManager.ThemeChanged -= OnThemeChanged;
                 StopMiddleMouseAutoScroll();
                 _windowSource?.RemoveHook(WindowMessageHook);
@@ -190,57 +193,8 @@ namespace HttpTraceAnalyser
             }
         }
 
-        private void DarkModeToggle_Changed(object sender, RoutedEventArgs e)
-        {
-            var target = DarkModeToggle.IsChecked == true ? AppTheme.Dark : AppTheme.Light;
-            if (ThemeManager.Current != target)
-                ThemeManager.Apply(target);
-        }
-
-        private async void McpServerButton_Checked(object sender, RoutedEventArgs e)
-        {
-            McpServerButton.IsEnabled = false;
-            try
-            {
-                await McpHostManager.StartAsync();
-                McpServerButton.Content = "Disable";
-                McpServerButton.Tag = "\uE8CE";
-            }
-            catch (Exception ex)
-            {
-                McpServerButton.IsChecked = false;
-                MessageBox.Show(this, $"Failed to start the MCP server:\n{ex.Message}",
-                    "MCP Server", MessageBoxButton.OK, MessageBoxImage.Error);
-            }
-            finally
-            {
-                McpServerButton.IsEnabled = true;
-            }
-        }
-
-        private async void McpServerButton_Unchecked(object sender, RoutedEventArgs e)
-        {
-            McpServerButton.IsEnabled = false;
-            try
-            {
-                await McpHostManager.StopAsync();
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show(this, $"Failed to stop the MCP server cleanly:\n{ex.Message}",
-                    "MCP Server", MessageBoxButton.OK, MessageBoxImage.Warning);
-            }
-            finally
-            {
-                McpServerButton.Content = "Enable";
-                McpServerButton.Tag = "\uE8CD";
-                McpServerButton.IsEnabled = true;
-            }
-        }
-
         private void OnThemeChanged(object? sender, EventArgs e)
         {
-            DarkModeToggle.IsChecked = ThemeManager.Current == AppTheme.Dark;
             // Row foreground uses a value converter that resolves the theme's
             // default brush when the row has no explicit colour, so re-run the
             // bindings to pick up the new palette.
@@ -272,28 +226,10 @@ namespace HttpTraceAnalyser
             }
         }
 
-        private void AddRule_Click(object sender, RoutedEventArgs e)
+        private void FilterButton_Click(object sender, RoutedEventArgs e)
         {
-            var rule = new FilterRule
-            {
-                Combinator = (FilterCombinator)(RuleCombinatorCombo.SelectedItem ?? FilterCombinator.And),
-                Field = (FilterField)(RuleFieldCombo.SelectedItem ?? FilterField.Response),
-                Comparator = (FilterComparator)(RuleComparatorCombo.SelectedItem ?? FilterComparator.Equals),
-                Value = RuleValueText.Text ?? string.Empty,
-            };
-            FilterRuleSet.Rules.Add(rule);
-            RuleValueText.Clear();
-        }
-
-        private void RemoveRule_Click(object sender, RoutedEventArgs e)
-        {
-            if (sender is FrameworkElement fe && fe.Tag is FilterRule rule)
-                FilterRuleSet.Rules.Remove(rule);
-        }
-
-        private void ClearRules_Click(object sender, RoutedEventArgs e)
-        {
-            FilterRuleSet.Rules.Clear();
+            var window = new FilterWindow { Owner = this };
+            window.ShowDialog();
         }
 
         private void FindCommand_Executed(object sender, ExecutedRoutedEventArgs e)
@@ -764,72 +700,6 @@ namespace HttpTraceAnalyser
             return false;
         }
 
-        private void LoadFilterRules_Click(object sender, RoutedEventArgs e)
-        {
-            var dialog = new Microsoft.Win32.OpenFileDialog
-            {
-                Title = "Load filter rules",
-                Filter = "Filter rule files (*.json)|*.json|All files (*.*)|*.*",
-                InitialDirectory = RulePersistence.FilterDirectory,
-            };
-            if (dialog.ShowDialog(this) != true)
-                return;
-
-            try
-            {
-                FilterRuleSet.Load(dialog.FileName);
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show(this, $"Failed to load filter rules:\n{ex.Message}",
-                    "Load Filters", MessageBoxButton.OK, MessageBoxImage.Error);
-            }
-        }
-
-        private void SaveFilterRules_Click(object sender, RoutedEventArgs e)
-        {
-            var dialog = new Microsoft.Win32.SaveFileDialog
-            {
-                Title = "Save filter rules",
-                Filter = "Filter rule files (*.json)|*.json|All files (*.*)|*.*",
-                DefaultExt = ".json",
-                AddExtension = true,
-                InitialDirectory = RulePersistence.FilterDirectory,
-            };
-            if (dialog.ShowDialog(this) != true)
-                return;
-
-            try
-            {
-                FilterRuleSet.Save(dialog.FileName);
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show(this, $"Failed to save filter rules:\n{ex.Message}",
-                    "Save Filters", MessageBoxButton.OK, MessageBoxImage.Error);
-            }
-        }
-
-        private void SetDefaultFilterRules_Click(object sender, RoutedEventArgs e)
-        {
-            if (MessageBox.Show(this,
-                    "Overwrite the default filter rules with the current rules? These rules will load when the application starts.",
-                    "Set Default Filters", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes)
-            {
-                return;
-            }
-
-            try
-            {
-                FilterRuleSet.SaveAsDefault();
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show(this, $"Failed to save the default filter rules:\n{ex.Message}",
-                    "Set Default Filters", MessageBoxButton.OK, MessageBoxImage.Error);
-            }
-        }
-
         private void OnHighlightRulesChanged(object? sender, EventArgs e)
         {
             _trace?.RecomputeHighlights();
@@ -843,15 +713,79 @@ namespace HttpTraceAnalyser
             window.ShowDialog();
         }
 
-        private void McpSettingsButton_Click(object sender, RoutedEventArgs e)
+        private void CustomColumnsButton_Click(object sender, RoutedEventArgs e)
         {
-            var window = new McpSettingsWindow { Owner = this };
+            var window = new CustomColumnsWindow { Owner = this };
             window.ShowDialog();
         }
 
-        private async void ViewLayoutCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        private void OnCustomColumnsChanged(object? sender, EventArgs e)
         {
-            bool useSplitView = ViewLayoutCombo.SelectedIndex == 1;
+            foreach (var rule in FilterRuleSet.Rules
+                .Where(rule => !TraceColumnCatalog.Names.Contains(
+                    rule.ColumnName,
+                    StringComparer.OrdinalIgnoreCase))
+                .ToArray())
+            {
+                FilterRuleSet.Rules.Remove(rule);
+            }
+
+            foreach (var rule in HighlightRuleSet.Rules
+                .Where(rule => !TraceColumnCatalog.Names.Contains(
+                    rule.ColumnName,
+                    StringComparer.OrdinalIgnoreCase))
+                .ToArray())
+            {
+                HighlightRuleSet.Rules.Remove(rule);
+            }
+
+            _trace?.RefreshUserDefinedColumns();
+            RebuildUserDefinedGridColumns();
+            ApplyFilter();
+            RequestList.Items.Refresh();
+        }
+
+        private async void AppSettingsButton_Click(object sender, RoutedEventArgs e)
+        {
+            var window = new AppSettingsWindow(_isSplitView) { Owner = this };
+            if (window.ShowDialog() != true)
+                return;
+
+            AppSettingsButton.IsEnabled = false;
+            try
+            {
+                var theme = window.UseDarkMode ? AppTheme.Dark : AppTheme.Light;
+                if (ThemeManager.Current != theme)
+                    ThemeManager.Apply(theme);
+
+                await SetViewLayoutAsync(window.UseSplitView);
+                await ApplyMcpSettingsAsync(window.HostMcpServer, window.McpPort);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(this, $"Failed to apply app settings:\n{ex.Message}",
+                    "App Settings", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+            finally
+            {
+                AppSettingsButton.IsEnabled = true;
+            }
+        }
+
+        private static async Task ApplyMcpSettingsAsync(bool shouldRun, int port)
+        {
+            bool portChanged = McpHostManager.Port != port;
+            if (McpHostManager.IsRunning && (!shouldRun || portChanged))
+                await McpHostManager.StopAsync();
+
+            McpHostManager.Port = port;
+
+            if (shouldRun && !McpHostManager.IsRunning)
+                await McpHostManager.StartAsync();
+        }
+
+        private async Task SetViewLayoutAsync(bool useSplitView)
+        {
             if (_isSplitView == useSplitView)
                 return;
 
@@ -1285,9 +1219,18 @@ namespace HttpTraceAnalyser
         {
             _contextCell = null;
 
-            var presenter = FindVisualAncestor<GridViewRowPresenter>(e.OriginalSource as DependencyObject);
-            if (presenter?.DataContext is not DataRowView row || RequestList.View is not GridView gridView)
+            var source = e.OriginalSource as DependencyObject;
+            var item = FindVisualAncestor<ListViewItem>(source);
+            var presenter = FindVisualAncestor<GridViewRowPresenter>(source);
+            if (item?.DataContext is not DataRowView row || presenter is null || RequestList.View is not GridView gridView)
                 return;
+
+            if (!item.IsSelected)
+            {
+                RequestList.SelectedItems.Clear();
+                item.IsSelected = true;
+            }
+            item.Focus();
 
             double x = e.GetPosition(presenter).X;
             double rightEdge = 0;
@@ -1370,14 +1313,13 @@ namespace HttpTraceAnalyser
 
         private void FilterCurrentCellMenuItem_Click(object sender, RoutedEventArgs e)
         {
-            if (_contextCell is not { } cell || !TryGetFilterField(cell.FieldName, out var field))
+            if (_contextCell is not { } cell)
                 return;
 
             FilterRuleSet.Rules.Add(new FilterRule
             {
                 Combinator = FilterCombinator.And,
-                Field = field,
-                CustomFieldName = field == FilterField.Custom ? cell.FieldName : string.Empty,
+                ColumnName = cell.FieldName,
                 Comparator = FilterComparator.Equals,
                 Value = cell.Value,
             });
@@ -1385,41 +1327,16 @@ namespace HttpTraceAnalyser
 
         private void HighlightCurrentCellMenuItem_Click(object sender, RoutedEventArgs e)
         {
-            if (_contextCell is not { } cell || !TryGetHighlightColumn(cell.FieldName, out var column))
+            if (_contextCell is not { } cell)
                 return;
 
             HighlightRuleSet.Rules.Insert(0, new HighlightRule
             {
-                Column = column,
-                CustomFieldName = column == HighlightColumn.Custom ? cell.FieldName : string.Empty,
+                ColumnName = cell.FieldName,
                 Operator = HighlightOperator.Equals,
                 Value = cell.Value,
                 BackgroundColor = Colors.LightYellow,
             });
-        }
-
-        private static bool TryGetFilterField(string fieldName, out FilterField field)
-        {
-            if (Enum.TryParse(fieldName, out field))
-                return true;
-            if (HttpTraceFile.ExtendedFieldNames.Contains(fieldName))
-            {
-                field = FilterField.Custom;
-                return true;
-            }
-            return false;
-        }
-
-        private static bool TryGetHighlightColumn(string fieldName, out HighlightColumn column)
-        {
-            if (Enum.TryParse(fieldName, out column))
-                return true;
-            if (HttpTraceFile.ExtendedFieldNames.Contains(fieldName))
-            {
-                column = HighlightColumn.Custom;
-                return true;
-            }
-            return false;
         }
 
         private static T? FindVisualAncestor<T>(DependencyObject? source) where T : DependencyObject
@@ -1539,10 +1456,68 @@ namespace HttpTraceAnalyser
                     menuItem.Checked += ColumnVisibility_Changed;
                     menuItem.Unchecked += ColumnVisibility_Changed;
 
-                    // Insert before the trailing "Auto-size Columns" item/separator, if present.
-                    int insertIndex = contextMenu.Items.Count;
+                    int insertIndex = contextMenu.Items.IndexOf(ColumnActionsSeparator);
+                    if (insertIndex < 0)
+                        insertIndex = contextMenu.Items.Count;
                     contextMenu.Items.Insert(insertIndex, menuItem);
                 }
+            }
+        }
+
+        private void RebuildUserDefinedGridColumns()
+        {
+            if (RequestList.View is not GridView gridView)
+                return;
+
+            foreach (var column in _userDefinedGridColumns.Values)
+                gridView.Columns.Remove(column);
+            _userDefinedGridColumns.Clear();
+
+            var contextMenu = gridView.ColumnHeaderContextMenu;
+            if (contextMenu is not null)
+            {
+                foreach (var item in _userDefinedColumnMenuItems)
+                    contextMenu.Items.Remove(item);
+                _userDefinedColumnMenuItems.Clear();
+            }
+
+            foreach (var definition in CustomColumnSet.Columns)
+            {
+                if (string.IsNullOrWhiteSpace(definition.Name) ||
+                    TraceColumnCatalog.IsReservedName(definition.Name) ||
+                    _userDefinedGridColumns.ContainsKey(definition.Name))
+                {
+                    continue;
+                }
+
+                var gridColumn = new GridViewColumn
+                {
+                    Header = definition.Name,
+                    Width = 160,
+                    DisplayMemberBinding = new Binding(definition.Name),
+                };
+                _userDefinedGridColumns[definition.Name] = gridColumn;
+
+                if (contextMenu is not null)
+                {
+                    var menuItem = new MenuItem
+                    {
+                        Header = definition.Name,
+                        IsCheckable = true,
+                        IsChecked = true,
+                        Tag = gridColumn,
+                    };
+                    menuItem.Checked += ColumnVisibility_Changed;
+                    menuItem.Unchecked += ColumnVisibility_Changed;
+
+                    int insertIndex = contextMenu.Items.IndexOf(ColumnActionsSeparator);
+                    if (insertIndex < 0)
+                        insertIndex = contextMenu.Items.Count;
+                    contextMenu.Items.Insert(insertIndex, menuItem);
+                    _userDefinedColumnMenuItems.Add(menuItem);
+                }
+
+                gridView.Columns.Insert(GetColumnInsertionIndex(gridView, gridColumn), gridColumn);
             }
         }
 
