@@ -27,8 +27,9 @@
         so it still needs explicit brushes.
     -->
     <Style TargetType="{x:Type avalonedit:TextEditor}">
-        <Setter Property="Background" Value="{DynamicResource TextControlBackgroundBrush}" />
+        <Setter Property="Background" Value="{DynamicResource TextControlBackground}" />
         <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}" />
+        <Setter Property="LineNumbersForeground" Value="{DynamicResource TextFillColorSecondaryBrush}" />
     </Style>
 
 </ResourceDictionary>
