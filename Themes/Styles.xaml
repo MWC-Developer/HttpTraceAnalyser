@@ -23,6 +23,17 @@
     </Style>
 
     <!--
+        Fluent's default DataGridRow selection tint is too faint to read against
+        a dark background (used by the Filter, Highlights, and Custom Columns
+        rule-editor grids). Raise the opacity so a selected row is clearly visible
+        in both light and dark mode.
+    -->
+    <SolidColorBrush x:Key="DataGridRowSelectedBackgroundThemeBrush" Opacity="0.85"
+                     Color="{DynamicResource {x:Static SystemColors.AccentColorKey}}" />
+    <SolidColorBrush x:Key="DataGridRowSelectedForegroundThemeBrush"
+                     Color="{DynamicResource TextFillColorPrimary}" />
+
+    <!--
         AvalonEdit's TextEditor is a third-party control not themed by Fluent,
         so it still needs explicit brushes.
     -->
