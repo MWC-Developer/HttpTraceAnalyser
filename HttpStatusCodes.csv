@@ -1,15 +1,21 @@
 ResponseCode,IsError,IsThrottling,Description
 100,false,false,Continue - The server has received the request headers and the client should proceed to send the request body.
 101,false,false,Switching Protocols - The requester has asked the server to switch protocols and the server has agreed to do so.
+102,false,false,Processing - The server has received and is processing the request but no response is available yet.
+103,false,false,Early Hints - The server is providing preliminary response headers while it prepares the final response.
 200,false,false,OK - The request succeeded.
 201,false,false,Created - The request succeeded and a new resource was created as a result.
 202,false,false,Accepted - The request has been received but not yet acted upon.
 203,false,false,Non-Authoritative Information - The returned metadata is not exactly the same as is available from the origin server.
 204,false,false,No Content - There is no content to send for this request but the headers may be useful.
+205,false,false,Reset Content - The request succeeded and the client should reset the document view or input form.
 206,false,false,Partial Content - This response code is used when the Range header is sent from the client to request only part of a resource.
+207,false,false,Multi-Status - The response contains status information for multiple resources or operations. Inspect the WebDAV response body for individual results.
+208,false,false,Already Reported - Members of a WebDAV binding have already been included earlier in the multi-status response.
 300,false,false,Multiple Choices - The request has more than one possible response.
 301,false,false,Moved Permanently - The URL of the requested resource has been changed permanently. Check the Location header for the new URL.
 302,false,false,Found - The URI of the requested resource has been changed temporarily. Check the Location header.
+303,false,false,See Other - Retrieve the requested resource from the URI in the Location header using a GET request.
 304,false,false,Not Modified - The resource has not been modified since the version specified by the request headers.
 307,false,false,Temporary Redirect - The server sends this response to direct the client to get the requested resource at another URI.
 308,false,false,Permanent Redirect - The resource is now permanently located at another URI specified by the Location header.
@@ -19,15 +25,34 @@ ResponseCode,IsError,IsThrottling,Description
 404,true,false,Not Found - The server cannot find the requested resource. Verify the URL and ensure the resource exists.
 405,true,false,Method Not Allowed - The request method is not supported for the requested resource. Check allowed HTTP methods for this endpoint.
 406,true,false,Not Acceptable - The requested resource is not available in a format that respects the Accept headers. Adjust Accept headers.
+407,true,false,Proxy Authentication Required - Authentication with the proxy is required. Check proxy credentials and the Proxy-Authenticate header.
 408,true,false,Request Timeout - The server timed out waiting for the request. Retry the request or check network connectivity.
 409,true,false,Conflict - The request conflicts with the current state of the server. Review and resolve the conflicting state.
 410,true,false,Gone - The requested resource is no longer available and will not be available again. Remove references to this resource.
+411,true,false,Length Required - The server requires a valid Content-Length header. Supply the request body length and retry.
+412,true,false,Precondition Failed - One or more conditions specified in the request headers evaluated to false. Verify conditional headers such as If-Match and If-Unmodified-Since.
 413,true,false,Payload Too Large - The request entity is larger than limits defined by server. Reduce request payload size.
 414,true,false,URI Too Long - The URI requested by the client is longer than the server is willing to interpret. Shorten the URI.
 415,true,false,Unsupported Media Type - The media format of the requested data is not supported. Check Content-Type header.
+416,true,false,Range Not Satisfiable - The requested byte range cannot be fulfilled. Verify the Range header against the resource size.
+417,true,false,Expectation Failed - The server cannot meet the requirements of the Expect request header. Remove or revise the expectation.
+418,true,false,I'm a Teapot - The server refuses to brew coffee because it identifies as a teapot.
+421,true,false,Misdirected Request - The request was sent to a server that cannot produce a response for the target authority. Retry using a different connection.
+422,true,false,Unprocessable Content - The request syntax is valid but its instructions cannot be processed. Correct validation or semantic errors in the request body.
+423,true,false,Locked - The requested WebDAV resource is locked. Release the lock or supply the correct lock token.
+424,true,false,Failed Dependency - The request failed because a dependent WebDAV operation failed. Resolve the earlier failure and retry.
+425,true,false,Too Early - The server is unwilling to process a request that might be replayed. Retry after the secure connection is fully established.
+426,true,false,Upgrade Required - The server requires a different protocol. Follow the Upgrade header and retry with the required protocol.
+428,true,false,Precondition Required - The server requires the request to be conditional. Supply an appropriate header such as If-Match.
 429,true,true,Too Many Requests - Rate limit exceeded. Implement backoff and retry after the time specified in Retry-After header (or exponential backoff if no header indication).
+431,true,false,Request Header Fields Too Large - The request headers are too large. Reduce header size or remove unnecessary cookies and retry.
+451,true,false,Unavailable For Legal Reasons - Access to the resource is denied for legal reasons. Review the response for details about the restriction.
 500,true,false,Internal Server Error - The server encountered an unexpected condition. Contact support or check server logs for details.
 501,true,false,Not Implemented - The request method is not supported by the server. Use a different HTTP method.
 502,true,false,Bad Gateway - The server received an invalid response from the upstream server. Check upstream server status and connectivity.
 503,true,true,Service Unavailable - The server is not ready to handle the request (maintenance or overload). Retry after some time or check service status.
 504,true,false,Gateway Timeout - The server acting as a gateway did not get a response in time. Retry or increase timeout settings.
+505,true,false,HTTP Version Not Supported - The server does not support the HTTP version used by the request. Use a supported protocol version.
+507,true,false,Insufficient Storage - The server cannot store the representation needed to complete the request. Free storage or reduce the operation size.
+508,true,false,Loop Detected - The server detected an infinite loop while processing a WebDAV request. Correct the resource bindings or request path.
+511,true,false,Network Authentication Required - The client must authenticate to gain network access. Complete the captive portal or network sign-in.
