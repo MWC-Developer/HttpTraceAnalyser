@@ -381,6 +381,14 @@
                                 <MenuItem Header="Latency (ms)" IsCheckable="True" IsChecked="True"
                                           Tag="{x:Reference LatencyColumn}"
                                           Checked="ColumnVisibility_Changed" Unchecked="ColumnVisibility_Changed" />
+                                <MenuItem x:Name="ProcessColumnMenuItem" Header="Process" IsCheckable="True" IsChecked="False"
+                                          Visibility="Collapsed"
+                                          Checked="ColumnVisibility_Changed" Unchecked="ColumnVisibility_Changed">
+                                    <MenuItem.Tag>
+                                        <GridViewColumn Header="Process" Width="160"
+                                                        DisplayMemberBinding="{Binding Process}" />
+                                    </MenuItem.Tag>
+                                </MenuItem>
                                 <Separator />
                                 <MenuItem Header="Content-Type" IsCheckable="True" IsChecked="False"
                                           Checked="ColumnVisibility_Changed" Unchecked="ColumnVisibility_Changed">

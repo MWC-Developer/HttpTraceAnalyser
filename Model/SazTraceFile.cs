@@ -41,12 +41,12 @@ namespace HttpTraceAnalyser.Model
                 var serverEntry = group.FirstOrDefault(e => e.Name.EndsWith("_s.txt", StringComparison.OrdinalIgnoreCase));
                 var metaEntry = group.FirstOrDefault(e => e.Name.EndsWith("_m.xml", StringComparison.OrdinalIgnoreCase));
 
-                var (requestTimestamp, responseTimestamp) = ReadTimestamps(metaEntry);
+                var (requestTimestamp, responseTimestamp, process) = ReadMetadata(metaEntry);
 
                 var request = ParseRequest(clientEntry, requestTimestamp);
                 var response = serverEntry is null ? null : ParseResponse(serverEntry, responseTimestamp);
 
-                AddRow(request, response);
+                AddRow(request, response, process);
             }
         }
 
@@ -58,26 +58,31 @@ namespace HttpTraceAnalyser.Model
             return underscore <= 0 ? string.Empty : name.Substring(0, underscore);
         }
 
-        private static (DateTimeOffset? request, DateTimeOffset? response) ReadTimestamps(ZipArchiveEntry? metaEntry)
+        private static (DateTimeOffset? request, DateTimeOffset? response, string? process) ReadMetadata(ZipArchiveEntry? metaEntry)
         {
             if (metaEntry is null)
-                return (null, null);
+                return (null, null, null);
 
             try
             {
                 using var stream = metaEntry.Open();
                 var doc = XDocument.Load(stream);
                 var timers = doc.Descendants("SessionTimers").FirstOrDefault();
-                if (timers is null)
-                    return (null, null);
+                var process = doc.Descendants("SessionFlag")
+                    .FirstOrDefault(flag => string.Equals(
+                        flag.Attribute("N")?.Value,
+                        "x-processinfo",
+                        StringComparison.OrdinalIgnoreCase))
+                    ?.Attribute("V")?.Value;
 
                 return (
-                    ParseTime(timers.Attribute("ClientBeginRequest")?.Value),
-                    ParseTime(timers.Attribute("ServerDoneResponse")?.Value));
+                    ParseTime(timers?.Attribute("ClientBeginRequest")?.Value),
+                    ParseTime(timers?.Attribute("ServerDoneResponse")?.Value),
+                    process);
             }
             catch
             {
-                return (null, null);
+                return (null, null, null);
             }
         }
 
