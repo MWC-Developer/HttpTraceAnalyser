@@ -17,6 +17,10 @@
                 <x:Type TypeName="model:HighlightOperator" />
             </ObjectDataProvider.MethodParameters>
         </ObjectDataProvider>
+        <SolidColorBrush x:Key="DataGridRowSelectedBackgroundThemeBrush" Opacity="0.6"
+                         Color="{DynamicResource {x:Static SystemColors.AccentColorKey}}" />
+        <SolidColorBrush x:Key="DataGridRowSelectedForegroundThemeBrush"
+                         Color="{DynamicResource TextFillColorPrimary}" />
     </Window.Resources>
     <DockPanel Margin="8">
         <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal"
