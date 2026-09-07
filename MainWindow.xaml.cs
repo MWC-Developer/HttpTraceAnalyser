@@ -1903,6 +1903,9 @@ namespace HttpTraceAnalyser
         private void PopulateList()
         {
             ResetSortIndicator();
+            bool showProcess = _trace is SazTraceFile;
+            ProcessColumnMenuItem.Visibility = showProcess ? Visibility.Visible : Visibility.Collapsed;
+            ProcessColumnMenuItem.IsChecked = showProcess;
             RequestList.ItemsSource = _trace?.View;
             ApplyFilter();
 

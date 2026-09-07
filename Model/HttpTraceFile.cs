@@ -28,6 +28,7 @@ namespace HttpTraceAnalyser.Model
         public const string Url = nameof(Url);
         public const string Host = nameof(Host);
         public const string Path = nameof(Path);
+        public const string Process = nameof(Process);
         public const string RequestHeaders = nameof(RequestHeaders);
         public const string ResponseHeaders = nameof(ResponseHeaders);
         public const string RequestPayload = nameof(RequestPayload);
@@ -144,6 +145,7 @@ namespace HttpTraceAnalyser.Model
             cols.Add(TraceDataSchema.Url, typeof(string));
             cols.Add(TraceDataSchema.Host, typeof(string));
             cols.Add(TraceDataSchema.Path, typeof(string));
+            cols.Add(TraceDataSchema.Process, typeof(string));
             cols.Add(TraceDataSchema.RequestHeaders, typeof(string));
             cols.Add(TraceDataSchema.ResponseHeaders, typeof(string));
             cols.Add(TraceDataSchema.RequestPayload, typeof(byte[]));
@@ -160,7 +162,7 @@ namespace HttpTraceAnalyser.Model
         }
 
         /// <summary>Appends a request/response pair to the table.</summary>
-        protected internal void AddRow(HttpRequest request, HttpResponse? response)
+        protected internal void AddRow(HttpRequest request, HttpResponse? response, string? process = null)
         {
             if (request is null)
                 throw new ArgumentNullException(nameof(request));
@@ -185,6 +187,7 @@ namespace HttpTraceAnalyser.Model
             row[TraceDataSchema.Url] = request.Url?.ToString() ?? string.Empty;
             row[TraceDataSchema.Host] = request.Host;
             row[TraceDataSchema.Path] = request.Path;
+            row[TraceDataSchema.Process] = process ?? string.Empty;
             row[TraceDataSchema.RequestHeaders] = SerializeHeaders(request.Headers);
             row[TraceDataSchema.RequestPayload] = request.Payload ?? Array.Empty<byte>();
 
