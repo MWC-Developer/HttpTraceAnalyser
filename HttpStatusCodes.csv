@@ -30,7 +30,7 @@ ResponseCode,IsError,IsThrottling,Description
 409,true,false,Conflict - The request conflicts with the current state of the server. Review and resolve the conflicting state.
 410,true,false,Gone - The requested resource is no longer available and will not be available again. Remove references to this resource.
 411,true,false,Length Required - The server requires a valid Content-Length header. Supply the request body length and retry.
-412,true,false,Precondition Failed - One or more conditions specified in the request headers evaluated to false. Verify conditional headers such as If-Match and If-Unmodified-Since.
+412,true,false,Precondition Failed - A request condition was not met. Check conditional headers and application-specific version or synchronization/session keys; retry with refreshed state when provided.
 413,true,false,Payload Too Large - The request entity is larger than limits defined by server. Reduce request payload size.
 414,true,false,URI Too Long - The URI requested by the client is longer than the server is willing to interpret. Shorten the URI.
 415,true,false,Unsupported Media Type - The media format of the requested data is not supported. Check Content-Type header.
