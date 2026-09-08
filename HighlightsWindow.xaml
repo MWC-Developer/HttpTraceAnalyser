@@ -4,46 +4,85 @@
         xmlns:sys="clr-namespace:System;assembly=System.Runtime"
         xmlns:model="clr-namespace:HttpTraceAnalyser.Model"
         xmlns:local="clr-namespace:HttpTraceAnalyser"
-        Title="Highlights" Height="420" Width="760"
+        Title="Highlights" Height="420" Width="900"
         WindowStartupLocation="CenterOwner">
     <Window.Resources>
-        <ObjectDataProvider x:Key="ColumnValues" MethodName="GetValues" ObjectType="{x:Type sys:Enum}">
-            <ObjectDataProvider.MethodParameters>
-                <x:Type TypeName="model:HighlightColumn" />
-            </ObjectDataProvider.MethodParameters>
-        </ObjectDataProvider>
         <ObjectDataProvider x:Key="OperatorValues" MethodName="GetValues" ObjectType="{x:Type sys:Enum}">
             <ObjectDataProvider.MethodParameters>
                 <x:Type TypeName="model:HighlightOperator" />
             </ObjectDataProvider.MethodParameters>
         </ObjectDataProvider>
-        <SolidColorBrush x:Key="DataGridRowSelectedBackgroundThemeBrush" Opacity="0.6"
-                         Color="{DynamicResource {x:Static SystemColors.AccentColorKey}}" />
-        <SolidColorBrush x:Key="DataGridRowSelectedForegroundThemeBrush"
-                         Color="{DynamicResource TextFillColorPrimary}" />
     </Window.Resources>
     <DockPanel Margin="8">
-        <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal"
-                    HorizontalAlignment="Right" Margin="0,8,0,0">
-            <Button Content="Add" Width="80" Margin="0,0,8,0" Click="AddButton_Click" />
-            <Button Content="Remove" Width="80" Margin="0,0,8,0" Click="RemoveButton_Click" />
-            <Button Content="Close" Width="80" IsCancel="True" IsDefault="True" />
-        </StackPanel>
+        <Grid DockPanel.Dock="Top" Margin="0,0,0,8">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <StackPanel Grid.Column="0" Orientation="Horizontal">
+                <Button Content="Load..." Width="80" Margin="0,0,8,0" Click="LoadButton_Click" />
+                <Button Content="Save As..." Width="80" Click="SaveButton_Click" />
+            </StackPanel>
+            <StackPanel Grid.Column="2" Orientation="Horizontal">
+                <Button Content="Reset" Width="80" Margin="0,0,8,0" Click="ResetButton_Click"
+                        ToolTip="Restore the saved default. Hold Shift to restore the app defaults." />
+                <Button Content="Set Default" Width="90" Click="SetDefaultButton_Click" />
+            </StackPanel>
+        </Grid>
+
+        <Grid DockPanel.Dock="Bottom" Margin="0,8,0,0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <StackPanel Grid.Column="0" Orientation="Horizontal">
+                <Button Content="Add" Width="80" Margin="0,0,8,0" Click="AddButton_Click" />
+                <Button Content="Remove" Width="80" Click="RemoveButton_Click" />
+            </StackPanel>
+            <StackPanel Grid.Column="2" Orientation="Horizontal">
+                <Button Content="OK" Width="80" Margin="0,0,8,0" IsDefault="True" Click="OkButton_Click" />
+                <Button Content="Cancel" Width="80" IsCancel="True" />
+            </StackPanel>
+        </Grid>
 
         <TextBlock DockPanel.Dock="Top" Margin="0,0,0,6" TextWrapping="Wrap"
-                   Text="Rules are evaluated top-to-bottom; the first matching enabled rule sets the row colour. Colours use #RRGGBB (foreground may be blank)." />
+               Text="Rules are evaluated top-to-bottom; the first matching enabled rule sets the row colour." />
 
         <DataGrid x:Name="RulesGrid" AutoGenerateColumns="False"
                   CanUserAddRows="False" CanUserDeleteRows="False"
-                  SelectionMode="Extended">
+                  SelectionMode="Extended" AllowDrop="True"
+                  PreviewMouseLeftButtonDown="RulesGrid_PreviewMouseLeftButtonDown"
+                  DragOver="RulesGrid_DragOver" DragLeave="RulesGrid_DragLeave"
+                  Drop="RulesGrid_Drop">
             <DataGrid.Columns>
+                <DataGridTemplateColumn Width="32" IsReadOnly="True">
+                    <DataGridTemplateColumn.CellStyle>
+                        <Style TargetType="DataGridCell">
+                            <Setter Property="Cursor" Value="SizeAll" />
+                            <Setter Property="ToolTip" Value="Drag to reorder rule" />
+                            <EventSetter Event="PreviewMouseLeftButtonDown"
+                                         Handler="RuleDragHandle_PreviewMouseLeftButtonDown" />
+                            <EventSetter Event="PreviewMouseMove"
+                                         Handler="RuleDragHandle_PreviewMouseMove" />
+                        </Style>
+                    </DataGridTemplateColumn.CellStyle>
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                            <TextBlock Text="&#xE700;" FontFamily="Segoe Fluent Icons"
+                                       FontSize="12" HorizontalAlignment="Center"
+                                       VerticalAlignment="Center" />
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
                 <DataGridCheckBoxColumn Header="On"
                                         Binding="{Binding IsEnabled, UpdateSourceTrigger=PropertyChanged}"
                                         Width="40" />
                 <DataGridComboBoxColumn Header="Column"
-                                        ItemsSource="{Binding Source={StaticResource ColumnValues}}"
-                                        SelectedItemBinding="{Binding Column}"
-                                        Width="100" />
+                                        ItemsSource="{x:Static model:TraceColumnCatalog.Names}"
+                                        SelectedItemBinding="{Binding ColumnName}"
+                                        Width="150" />
                 <DataGridComboBoxColumn Header="Operator"
                                         ItemsSource="{Binding Source={StaticResource OperatorValues}}"
                                         SelectedItemBinding="{Binding Operator}"
@@ -51,12 +90,45 @@
                 <DataGridTextColumn Header="Value"
                                     Binding="{Binding Value, UpdateSourceTrigger=PropertyChanged}"
                                     Width="180" />
-                <DataGridTextColumn Header="Background"
-                                    Binding="{Binding BackgroundColor, Converter={x:Static local:HighlightsWindow.ColorConverter}, UpdateSourceTrigger=LostFocus}"
-                                    Width="110" />
-                <DataGridTextColumn Header="Foreground"
-                                    Binding="{Binding ForegroundColor, Converter={x:Static local:HighlightsWindow.NullableColorConverter}, UpdateSourceTrigger=LostFocus}"
-                                    Width="110" />
+                <DataGridTemplateColumn Header="Background" Width="110">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                            <Button Click="ColorPickerButton_Click" Tag="Background"
+                                    Padding="3" HorizontalAlignment="Stretch"
+                                    HorizontalContentAlignment="Stretch"
+                                    ToolTip="Choose background colour">
+                                <Border Height="20"
+                                        Background="{Binding BackgroundColor, Converter={x:Static local:HighlightsWindow.ColorBrushConverter}}"
+                                        BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}"
+                                        BorderThickness="1" />
+                            </Button>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+                <DataGridTemplateColumn Header="Foreground" Width="140">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <Button Grid.Column="0" Click="ColorPickerButton_Click" Tag="Foreground"
+                                    Padding="3" HorizontalAlignment="Stretch"
+                                    HorizontalContentAlignment="Stretch"
+                                        ToolTip="Choose foreground colour">
+                                    <Border Height="20"
+                                            Background="{Binding ForegroundColor, Converter={x:Static local:HighlightsWindow.ColorBrushConverter}}"
+                                            BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}"
+                                            BorderThickness="1" />
+                                </Button>
+                                <Button Grid.Column="1" Content="&#x2715;" Margin="3,0,0,0" Padding="6,0"
+                                        Click="ClearForegroundButton_Click"
+                                        ToolTip="Use automatic foreground colour" />
+                            </Grid>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
             </DataGrid.Columns>
         </DataGrid>
     </DockPanel>

@@ -22,13 +22,14 @@ namespace HttpTraceAnalyser.Model
         Index,
         ReasonPhrase,
         Latency,
+        Process,
         ContentType,
         ClientRequestId,
         SoapMethod,
         XRequestId,
         /// <summary>
-        /// A plugin-contributed extended field. The actual column name is held in
-        /// <see cref="HighlightRule.CustomFieldName"/> (see <see cref="HttpTraceFile.ExtendedFieldNames"/>).
+        /// A dynamically named field. The actual column name is held in
+        /// <see cref="HighlightRule.CustomFieldName"/>.
         /// </summary>
         Custom,
     }
@@ -38,6 +39,7 @@ namespace HttpTraceAnalyser.Model
         Equals,
         NotEquals,
         Contains,
+        DoesNotContain,
         StartsWith,
         Regex,
         /// <summary>Value formatted as "min-max" (inclusive) for numeric columns.</summary>
@@ -66,7 +68,31 @@ namespace HttpTraceAnalyser.Model
         public HighlightColumn Column
         {
             get => _column;
-            set => Set(ref _column, value);
+            set
+            {
+                if (Set(ref _column, value))
+                    OnPropertyChanged(nameof(ColumnName));
+            }
+        }
+
+        public string ColumnName
+        {
+            get => Column == HighlightColumn.Custom ? CustomFieldName : Column.ToString();
+            set
+            {
+                var name = value ?? string.Empty;
+                if (Enum.TryParse<HighlightColumn>(name, ignoreCase: true, out var column) &&
+                    column != HighlightColumn.Custom)
+                {
+                    Column = column;
+                    CustomFieldName = string.Empty;
+                }
+                else
+                {
+                    CustomFieldName = name;
+                    Column = HighlightColumn.Custom;
+                }
+            }
         }
 
         public HighlightOperator Operator
@@ -82,14 +108,17 @@ namespace HttpTraceAnalyser.Model
         }
 
         /// <summary>
-        /// Name of the plugin-contributed extended field to highlight on, used when
-        /// <see cref="Column"/> is <see cref="HighlightColumn.Custom"/>. Must match a name in
-        /// <see cref="HttpTraceFile.ExtendedFieldNames"/>.
+        /// Name of the dynamically named field to highlight on, used when
+        /// <see cref="Column"/> is <see cref="HighlightColumn.Custom"/>.
         /// </summary>
         public string CustomFieldName
         {
             get => _customFieldName;
-            set => Set(ref _customFieldName, value ?? string.Empty);
+            set
+            {
+                if (Set(ref _customFieldName, value ?? string.Empty) && Column == HighlightColumn.Custom)
+                    OnPropertyChanged(nameof(ColumnName));
+            }
         }
 
         public Color BackgroundColor
@@ -119,6 +148,8 @@ namespace HttpTraceAnalyser.Model
                     return !string.Equals(text, Value, StringComparison.OrdinalIgnoreCase);
                 case HighlightOperator.Contains:
                     return text.Contains(Value, StringComparison.OrdinalIgnoreCase);
+                case HighlightOperator.DoesNotContain:
+                    return !text.Contains(Value, StringComparison.OrdinalIgnoreCase);
                 case HighlightOperator.StartsWith:
                     return text.StartsWith(Value, StringComparison.OrdinalIgnoreCase);
                 case HighlightOperator.Regex:
@@ -158,53 +189,127 @@ namespace HttpTraceAnalyser.Model
 
         public event PropertyChangedEventHandler? PropertyChanged;
 
-        private void Set<T>(ref T field, T value, [CallerMemberName] string? name = null)
+        internal HighlightRule Clone() => new()
+        {
+            IsEnabled = IsEnabled,
+            Column = Column,
+            Operator = Operator,
+            Value = Value,
+            CustomFieldName = CustomFieldName,
+            BackgroundColor = BackgroundColor,
+            ForegroundColor = ForegroundColor,
+        };
+
+        private bool Set<T>(ref T field, T value, [CallerMemberName] string? name = null)
         {
             if (Equals(field, value))
-                return;
+                return false;
             field = value;
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name!));
-            HighlightRuleSet.NotifyRuleChanged(this);
+            OnPropertyChanged(name!);
+            return true;
         }
+
+        private void OnPropertyChanged(string name)
+            => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
     }
 
     /// <summary>Central store of highlight rules; evaluated in order (first match wins).</summary>
     public static class HighlightRuleSet
     {
+        private static bool _suppressNotifications;
+
         public static ObservableCollection<HighlightRule> Rules { get; } = new();
 
         public static event EventHandler? RulesChanged;
 
         static HighlightRuleSet()
         {
-            AddDefaults();
             Rules.CollectionChanged += OnCollectionChanged;
+            ResetToDefault();
         }
 
-        private static void AddDefaults()
+        public static void ResetToDefault()
         {
-            Rules.Add(new HighlightRule
+            if (System.IO.File.Exists(RulePersistence.HighlightDefaultPath))
+            {
+                try
+                {
+                    ReplaceRules(RulePersistence.LoadHighlights(RulePersistence.HighlightDefaultPath));
+                    return;
+                }
+                catch
+                {
+                    // A bad user default must not prevent application startup.
+                }
+            }
+
+            ReplaceRules(CreateFactoryDefaults());
+        }
+
+        /// <summary>Replaces the active rules with the given set, e.g. after a dialog commits its draft.</summary>
+        public static void Replace(System.Collections.Generic.IEnumerable<HighlightRule> rules) => ReplaceRules(rules);
+
+        /// <summary>Returns the saved default rules, or the built-in factory defaults if none are saved, without applying them.</summary>
+        internal static List<HighlightRule> GetSavedDefaultOrFactory()
+        {
+            if (System.IO.File.Exists(RulePersistence.HighlightDefaultPath))
+            {
+                try
+                {
+                    return RulePersistence.LoadHighlights(RulePersistence.HighlightDefaultPath);
+                }
+                catch
+                {
+                    // A bad user default falls back to the factory defaults below.
+                }
+            }
+
+            return CreateFactoryDefaults();
+        }
+
+        /// <summary>Returns the built-in factory default rules without applying them.</summary>
+        internal static List<HighlightRule> GetFactoryDefaults() => CreateFactoryDefaults();
+
+        private static List<HighlightRule> CreateFactoryDefaults() =>
+        [
+            new HighlightRule
             {
                 Column = HighlightColumn.Response,
                 Operator = HighlightOperator.Equals,
                 Value = "429",
-                BackgroundColor = Color.FromRgb(0xFF, 0xF3, 0xB0), // light yellow
-            });
-            Rules.Add(new HighlightRule
+                BackgroundColor = Color.FromRgb(0xFF, 0xF3, 0xB0),
+            },
+            new HighlightRule
             {
                 Column = HighlightColumn.Response,
                 Operator = HighlightOperator.Range,
                 Value = "200-299",
-                BackgroundColor = Color.FromRgb(0xD4, 0xF7, 0xD4), // light green
+                BackgroundColor = Color.FromRgb(0xD4, 0xF7, 0xD4),
                 IsEnabled = false,
-            });
-            Rules.Add(new HighlightRule
+            },
+            new HighlightRule
             {
                 Column = HighlightColumn.Response,
                 Operator = HighlightOperator.Range,
                 Value = "400-599",
-                BackgroundColor = Color.FromRgb(0xF7, 0xC8, 0xC8), // light red
-            });
+                BackgroundColor = Color.FromRgb(0xF7, 0xC8, 0xC8),
+            },
+        ];
+
+        private static void ReplaceRules(IEnumerable<HighlightRule> rules)
+        {
+            _suppressNotifications = true;
+            try
+            {
+                Rules.Clear();
+                foreach (var rule in rules)
+                    Rules.Add(rule);
+            }
+            finally
+            {
+                _suppressNotifications = false;
+            }
+            RaiseChanged();
         }
 
         private static void OnCollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
@@ -226,9 +331,11 @@ namespace HttpTraceAnalyser.Model
 
         private static void OnRulePropertyChanged(object? sender, PropertyChangedEventArgs e) => RaiseChanged();
 
-        internal static void NotifyRuleChanged(HighlightRule rule) => RaiseChanged();
-
-        private static void RaiseChanged() => RulesChanged?.Invoke(null, EventArgs.Empty);
+        private static void RaiseChanged()
+        {
+            if (!_suppressNotifications)
+                RulesChanged?.Invoke(null, EventArgs.Empty);
+        }
 
         /// <summary>Finds the first enabled rule that matches the given item; null if none.</summary>
         public static HighlightRule? Match(object? item)

@@ -11,27 +11,17 @@
         mc:Ignorable="d"
         Title="HTTP Trace Analyser" Height="800" Width="1600"
         WindowState="Normal"
+        PreviewKeyDown="MainWindow_PreviewKeyDown"
         Icon="HttpTraceAnalyser.ico"
         Background="{DynamicResource ApplicationBackgroundBrush}"
         Foreground="{DynamicResource TextFillColorPrimaryBrush}">
+    <Window.CommandBindings>
+        <CommandBinding Command="ApplicationCommands.Find" Executed="FindCommand_Executed" />
+    </Window.CommandBindings>
+    <Window.InputBindings>
+        <KeyBinding Key="F" Modifiers="Control" Command="ApplicationCommands.Find" />
+    </Window.InputBindings>
     <Window.Resources>
-        <BooleanToVisibilityConverter x:Key="BoolToVis" />
-        <ObjectDataProvider x:Key="FilterFieldValues" MethodName="GetValues" ObjectType="{x:Type sys:Enum}">
-            <ObjectDataProvider.MethodParameters>
-                <x:Type TypeName="model:FilterField" />
-            </ObjectDataProvider.MethodParameters>
-        </ObjectDataProvider>
-        <ObjectDataProvider x:Key="FilterComparatorValues" MethodName="GetValues" ObjectType="{x:Type sys:Enum}">
-            <ObjectDataProvider.MethodParameters>
-                <x:Type TypeName="model:FilterComparator" />
-            </ObjectDataProvider.MethodParameters>
-        </ObjectDataProvider>
-        <ObjectDataProvider x:Key="FilterCombinatorValues" MethodName="GetValues" ObjectType="{x:Type sys:Enum}">
-            <ObjectDataProvider.MethodParameters>
-                <x:Type TypeName="model:FilterCombinator" />
-            </ObjectDataProvider.MethodParameters>
-        </ObjectDataProvider>
-
         <!-- Ribbon-style toolbar resources -->
         <Style x:Key="RibbonButtonStyle" TargetType="{x:Type ButtonBase}">
             <Setter Property="Margin" Value="2,2" />
@@ -107,11 +97,12 @@
                     BorderBrush="{DynamicResource DividerStrokeColorDefaultBrush}"
                     BorderThickness="0,0,0,1">
                 <DockPanel LastChildFill="True">
-                    <ToggleButton x:Name="DarkModeToggle" DockPanel.Dock="Right"
-                                  Content="Dark mode" Margin="4,3" Padding="10,3"
-                                  VerticalAlignment="Center"
-                                  Checked="DarkModeToggle_Changed"
-                                  Unchecked="DarkModeToggle_Changed" />
+                    <Button x:Name="AppSettingsButton" DockPanel.Dock="Right"
+                            Content="App Settings" Tag="&#xE713;"
+                            Margin="4,3"
+                            VerticalAlignment="Center"
+                            Style="{StaticResource RibbonButtonStyle}"
+                            Click="AppSettingsButton_Click" />
                     <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                         <!-- File group -->
                         <Border Style="{StaticResource RibbonGroupStyle}">
@@ -126,26 +117,31 @@
                             </StackPanel>
                         </Border>
 
-                        <!-- Options group -->
-                        <Border Style="{StaticResource RibbonGroupStyle}">
-                            <StackPanel Orientation="Vertical">
-                                <StackPanel Orientation="Horizontal">
-                                    <Button x:Name="HighlightsButton" Content="Highlights"
-                                            Tag="&#xE12F;"
-                                            Style="{StaticResource RibbonButtonStyle}"
-                                            Click="HighlightsButton_Click" />
-                                </StackPanel>
-                                <TextBlock Text="Options" Style="{StaticResource RibbonGroupLabelStyle}" />
-                            </StackPanel>
-                        </Border>
-
                         <!-- View group -->
                         <Border Style="{StaticResource RibbonGroupStyle}">
                             <StackPanel Orientation="Vertical">
                                 <StackPanel Orientation="Horizontal">
-                                    <ToggleButton x:Name="FilterButton" Content="Filter"
-                                                  Tag="&#xE71C;"
-                                                  Style="{StaticResource RibbonToggleButtonStyle}" />
+                                    <Button x:Name="FilterButton" Content="Filter"
+                                            Tag="&#xE71C;"
+                                            Style="{StaticResource RibbonButtonStyle}"
+                                            Click="FilterButton_Click" />
+                                    <Button x:Name="HighlightsButton" Content="Highlights"
+                                            Tag="&#xE12F;"
+                                            Style="{StaticResource RibbonButtonStyle}"
+                                            Click="HighlightsButton_Click" />
+                                        <Button x:Name="CustomColumnsButton" Content="Custom Columns"
+                                            Tag="&#xF0E2;"
+                                            Style="{StaticResource RibbonButtonStyle}"
+                                            Click="CustomColumnsButton_Click" />
+                                </StackPanel>
+                                <TextBlock Text="View" Style="{StaticResource RibbonGroupLabelStyle}" />
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Navigation group -->
+                        <Border Style="{StaticResource RibbonGroupStyle}" BorderThickness="0">
+                            <StackPanel Orientation="Vertical">
+                                <StackPanel Orientation="Horizontal">
                                     <Button x:Name="PreviousErrorButton" Content="Previous Error"
                                             Tag="&#xE74A;"
                                             Style="{StaticResource RibbonButtonStyle}"
@@ -155,7 +151,7 @@
                                             Style="{StaticResource RibbonButtonStyle}"
                                             Click="NextErrorButton_Click" />
                                 </StackPanel>
-                                <TextBlock Text="View" Style="{StaticResource RibbonGroupLabelStyle}" />
+                                <TextBlock Text="Navigation" Style="{StaticResource RibbonGroupLabelStyle}" />
                             </StackPanel>
                         </Border>
 
@@ -168,10 +164,6 @@
                                                   Style="{StaticResource RibbonToggleButtonStyle}"
                                                   Checked="McpServerButton_Checked"
                                                   Unchecked="McpServerButton_Unchecked" />
-                                    <Button Content="Settings"
-                                            Tag="&#xE713;"
-                                            Style="{StaticResource RibbonButtonStyle}"
-                                            Click="McpSettingsButton_Click" />
                                 </StackPanel>
                                 <TextBlock Text="MCP Server" Style="{StaticResource RibbonGroupLabelStyle}" />
                             </StackPanel>
@@ -180,94 +172,61 @@
                 </DockPanel>
             </Border>
 
-        <Grid>
+        <Grid x:Name="WorkspaceGrid">
+            <Grid.RowDefinitions>
+                <RowDefinition x:Name="SessionsRow" Height="*" MinHeight="0" />
+                <RowDefinition x:Name="HorizontalSplitterRow" Height="0" />
+                <RowDefinition x:Name="SplitDetailsRow" Height="0" MinHeight="0" />
+            </Grid.RowDefinitions>
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="900" MinWidth="400" />
-                <ColumnDefinition Width="Auto" />
-                <ColumnDefinition Width="*" MinWidth="300" />
+                <ColumnDefinition x:Name="SessionsColumn" Width="900" MinWidth="400" />
+                <ColumnDefinition x:Name="VerticalSplitterColumn" Width="Auto" />
+                <ColumnDefinition x:Name="TabbedDetailsColumn" Width="*" MinWidth="300" />
             </Grid.ColumnDefinitions>
 
-            <Grid Grid.Column="0">
+            <Grid x:Name="SessionsPane" Grid.Row="0" Grid.Column="0">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="*" />
                 </Grid.RowDefinitions>
 
-                <Border x:Name="FilterEditor" Grid.Row="0"
-                        Background="{DynamicResource LayerFillColorDefaultBrush}"
-                        BorderBrush="{DynamicResource DividerStrokeColorDefaultBrush}"
-                        BorderThickness="0,0,0,1"
-                        Padding="6"
-                        Visibility="{Binding IsChecked, ElementName=FilterButton, Converter={StaticResource BoolToVis}}">
-                    <StackPanel>
-                        <Grid>
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="Auto" />
-                                <ColumnDefinition Width="Auto" />
-                                <ColumnDefinition Width="Auto" />
-                                <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="Auto" />
-                            </Grid.ColumnDefinitions>
-                            <ComboBox x:Name="RuleCombinatorCombo" Grid.Column="0"
-                                      Width="60" Margin="0,0,4,0"
-                                      ItemsSource="{Binding Source={StaticResource FilterCombinatorValues}}"
-                                      SelectedIndex="0" />
-                            <ComboBox x:Name="RuleFieldCombo" Grid.Column="1"
-                                      Width="90" Margin="0,0,4,0"
-                                      ItemsSource="{Binding Source={StaticResource FilterFieldValues}}"
-                                      SelectedIndex="0" />
-                            <ComboBox x:Name="RuleComparatorCombo" Grid.Column="2"
-                                      Width="110" Margin="0,0,4,0"
-                                      ItemsSource="{Binding Source={StaticResource FilterComparatorValues}}"
-                                      SelectedIndex="0" />
-                            <TextBox x:Name="RuleValueText" Grid.Column="3" Margin="0,0,4,0"
-                                     VerticalContentAlignment="Center" />
-                            <Button Grid.Column="4" Content="Add" MinWidth="60" Click="AddRule_Click" />
-                        </Grid>
-
-                        <ListBox x:Name="ActiveFiltersList" Margin="0,6,0,0" MaxHeight="120"
-                                 HorizontalContentAlignment="Stretch">
-                            <ListBox.ItemTemplate>
-                                <DataTemplate>
-                                    <Grid>
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="60" />
-                                            <ColumnDefinition Width="90" />
-                                            <ColumnDefinition Width="110" />
-                                            <ColumnDefinition Width="*" />
-                                            <ColumnDefinition Width="Auto" />
-                                        </Grid.ColumnDefinitions>
-                                        <ComboBox Grid.Column="0"
-                                                  ItemsSource="{Binding Source={StaticResource FilterCombinatorValues}}"
-                                                  SelectedItem="{Binding Combinator}"
-                                                  FontStyle="Italic" VerticalAlignment="Center" />
-                                        <ComboBox Grid.Column="1"
-                                                  ItemsSource="{Binding Source={StaticResource FilterFieldValues}}"
-                                                  SelectedItem="{Binding Field}"
-                                                  FontWeight="Bold" VerticalAlignment="Center" />
-                                        <ComboBox Grid.Column="2"
-                                                  ItemsSource="{Binding Source={StaticResource FilterComparatorValues}}"
-                                                  SelectedItem="{Binding Comparator}"
-                                                  VerticalAlignment="Center" />
-                                        <TextBox Grid.Column="3" Text="{Binding Value, UpdateSourceTrigger=PropertyChanged}"
-                                                 VerticalAlignment="Center" VerticalContentAlignment="Center" />
-                                        <Button Grid.Column="4" Content="&#x2715;" Padding="6,0"
-                                                Click="RemoveRule_Click" Tag="{Binding}" />
-                                    </Grid>
-                                </DataTemplate>
-                            </ListBox.ItemTemplate>
-                        </ListBox>
-
-                        <StackPanel Orientation="Horizontal" Margin="0,4,0,0"
-                                    HorizontalAlignment="Right">
-                            <Button Content="Clear all" Click="ClearRules_Click" MinWidth="70" />
-                        </StackPanel>
-                    </StackPanel>
+                <Border x:Name="FindSessionsBar" Grid.Row="0"
+                    Background="{DynamicResource LayerFillColorDefaultBrush}"
+                    BorderBrush="{DynamicResource DividerStrokeColorDefaultBrush}"
+                    BorderThickness="0,0,0,1"
+                    Padding="6" Visibility="Collapsed">
+                    <DockPanel LastChildFill="True">
+                    <Button DockPanel.Dock="Right" Content="&#xE711;" Margin="4,0,0,0"
+                        FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets"
+                        Padding="7,2" ToolTip="Close" Click="CloseFindButton_Click" />
+                    <Button DockPanel.Dock="Right" Content="&#xE72A;" Margin="4,0,0,0"
+                        FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets"
+                        Padding="7,2" ToolTip="Next match (Enter)" Click="FindNextButton_Click" />
+                    <Button DockPanel.Dock="Right" Content="&#xE70E;" Margin="4,0,0,0"
+                        FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets"
+                        Padding="7,2" ToolTip="Previous match (Shift+Enter)" Click="FindPreviousButton_Click" />
+                    <TextBlock x:Name="FindSessionsStatus" DockPanel.Dock="Right"
+                           Margin="8,0,4,0" VerticalAlignment="Center"
+                           Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                          <TextBlock DockPanel.Dock="Left" Text="Find" Margin="0,0,8,0"
+                           VerticalAlignment="Center" FontWeight="SemiBold" />
+                          <ComboBox x:Name="FindScopeCombo" DockPanel.Dock="Left" Width="150" Margin="0,0,6,0"
+                              SelectedIndex="0" SelectionChanged="FindScopeCombo_SelectionChanged">
+                           <ComboBoxItem Content="All sessions" />
+                           <ComboBoxItem Content="Request headers" />
+                           <ComboBoxItem Content="Request body" />
+                           <ComboBoxItem Content="Response headers" />
+                           <ComboBoxItem Content="Response body" />
+                          </ComboBox>
+                    <TextBox x:Name="FindSessionsText" VerticalContentAlignment="Center"
+                         KeyDown="FindSessionsText_KeyDown" TextChanged="FindSessionsText_TextChanged" />
+                    </DockPanel>
                 </Border>
 
                 <ListView x:Name="RequestList" Grid.Row="1"
                           SelectionMode="Extended"
                           SelectionChanged="RequestList_SelectionChanged"
+                          PreviewMouseRightButtonDown="RequestList_PreviewMouseRightButtonDown"
                           GridViewColumnHeader.Click="RequestList_HeaderClick"
                           ContextMenuOpening="RequestList_ContextMenuOpening"
                           ScrollViewer.HorizontalScrollBarVisibility="Auto">
@@ -275,22 +234,6 @@
                     <!-- Compact header padding; Fluent's default GridViewColumnHeader padding is much taller. -->
                     <Style TargetType="GridViewColumnHeader">
                         <Setter Property="Padding" Value="6,2" />
-                    </Style>
-                    <!-- Style for the selection arrow indicator -->
-                    <Style x:Key="SelectionArrow" TargetType="TextBlock">
-                        <Setter Property="Text" Value="" />
-                        <Setter Property="FontSize" Value="14" />
-                        <Setter Property="FontWeight" Value="Bold" />
-                        <Setter Property="Foreground" Value="{DynamicResource AccentFillColorDefaultBrush}" />
-                        <Setter Property="VerticalAlignment" Value="Center" />
-                        <Setter Property="Margin" Value="2,0,4,0" />
-                        <Setter Property="Visibility" Value="Hidden" />
-                        <Style.Triggers>
-                            <DataTrigger Binding="{Binding IsSelected, RelativeSource={RelativeSource AncestorType=ListViewItem}}" Value="True">
-                                <Setter Property="Text" Value="▶" />
-                                <Setter Property="Visibility" Value="Visible" />
-                            </DataTrigger>
-                        </Style.Triggers>
                     </Style>
                 </ListView.Resources>
                 <ListView.ItemContainerStyle>
@@ -318,26 +261,16 @@
                                         BorderBrush="Transparent"
                                         BorderThickness="1"
                                         Margin="0,0,14,0">
-                                        <Grid>
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="Auto" />
-                                                <ColumnDefinition Width="*" />
-                                            </Grid.ColumnDefinitions>
-
-                                            <!-- Selection arrow indicator -->
-                                            <TextBlock Grid.Column="0" Style="{StaticResource SelectionArrow}" />
-
-                                            <!-- Content -->
-                                            <GridViewRowPresenter Grid.Column="1"
-                                                                  Content="{TemplateBinding Content}"
-                                                                  Columns="{TemplateBinding GridView.ColumnCollection}"
-                                                                  Margin="0" />
-                                        </Grid>
+                                    <GridViewRowPresenter Content="{TemplateBinding Content}"
+                                                          Columns="{TemplateBinding GridView.ColumnCollection}"
+                                                          Margin="0" />
                                     </Border>
                                     <ControlTemplate.Triggers>
                                         <Trigger Property="IsSelected" Value="True">
                                             <Setter Property="FontWeight" Value="SemiBold" />
+                                            <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}" />
                                             <Setter TargetName="SelectionBorder" Property="BorderBrush" Value="{DynamicResource AccentFillColorDefaultBrush}" />
+                                            <Setter TargetName="SelectionBorder" Property="Background" Value="{DynamicResource ControlFillColorSecondaryBrush}" />
                                             <Setter TargetName="SelectionBorder" Property="BorderThickness" Value="2" />
                                         </Trigger>
                                     </ControlTemplate.Triggers>
@@ -347,10 +280,12 @@
                     </Style>
                 </ListView.ItemContainerStyle>
                 <ListView.ContextMenu>
-                    <ContextMenu>
+                    <ContextMenu Closed="RequestList_ContextMenuClosed">
                         <MenuItem Header="Remove" Click="RemoveItems_Click" />
                         <Separator />
                         <MenuItem x:Name="FilterMenuItem" Header="Filter">
+                            <MenuItem x:Name="FilterCurrentCellMenuItem" Click="FilterCurrentCellMenuItem_Click" />
+                            <Separator />
                             <MenuItem x:Name="FilterHostMenuItem" Click="FilterMenuItem_Click" />
                             <MenuItem x:Name="ExcludeHostMenuItem" Click="FilterMenuItem_Click" />
                             <Separator />
@@ -360,6 +295,9 @@
                             <MenuItem x:Name="FilterPathMenuItem" Click="FilterMenuItem_Click" />
                             <MenuItem x:Name="ExcludePathMenuItem" Click="FilterMenuItem_Click" />
                         </MenuItem>
+                        <MenuItem x:Name="HighlightMenuItem" Header="Highlight">
+                            <MenuItem x:Name="HighlightCurrentCellMenuItem" Click="HighlightCurrentCellMenuItem_Click" />
+                        </MenuItem>
                     </ContextMenu>
                 </ListView.ContextMenu>
                 <ListView.View>
@@ -367,8 +305,12 @@
                         <GridView.ColumnHeaderContextMenu>
                             <ContextMenu>
                                 <MenuItem Header="Date" IsCheckable="True" IsChecked="False"
-                                          Tag="{x:Reference DateColumn}"
-                                          Checked="ColumnVisibility_Changed" Unchecked="ColumnVisibility_Changed" />
+                                          Checked="ColumnVisibility_Changed" Unchecked="ColumnVisibility_Changed">
+                                    <MenuItem.Tag>
+                                        <GridViewColumn Header="Date" Width="200"
+                                                        DisplayMemberBinding="{Binding Date}" />
+                                    </MenuItem.Tag>
+                                </MenuItem>
                                 <MenuItem Header="Time" IsCheckable="True" IsChecked="True"
                                           Tag="{x:Reference TimeColumn}"
                                           Checked="ColumnVisibility_Changed" Unchecked="ColumnVisibility_Changed" />
@@ -379,8 +321,12 @@
                                           Tag="{x:Reference ResponseColumn}"
                                           Checked="ColumnVisibility_Changed" Unchecked="ColumnVisibility_Changed" />
                                 <MenuItem Header="URL" IsCheckable="True" IsChecked="False"
-                                          Tag="{x:Reference UrlColumn}"
-                                          Checked="ColumnVisibility_Changed" Unchecked="ColumnVisibility_Changed" />
+                                          Checked="ColumnVisibility_Changed" Unchecked="ColumnVisibility_Changed">
+                                    <MenuItem.Tag>
+                                        <GridViewColumn Header="URL" Width="200"
+                                                        DisplayMemberBinding="{Binding Url}" />
+                                    </MenuItem.Tag>
+                                </MenuItem>
                                 <MenuItem Header="Host" IsCheckable="True" IsChecked="True"
                                           Tag="{x:Reference HostColumn}"
                                           Checked="ColumnVisibility_Changed" Unchecked="ColumnVisibility_Changed" />
@@ -390,25 +336,47 @@
                                 <MenuItem Header="Latency (ms)" IsCheckable="True" IsChecked="True"
                                           Tag="{x:Reference LatencyColumn}"
                                           Checked="ColumnVisibility_Changed" Unchecked="ColumnVisibility_Changed" />
+                                <MenuItem x:Name="ProcessColumnMenuItem" Header="Process" IsCheckable="True" IsChecked="False"
+                                          Visibility="Collapsed"
+                                          Checked="ColumnVisibility_Changed" Unchecked="ColumnVisibility_Changed">
+                                    <MenuItem.Tag>
+                                        <GridViewColumn Header="Process" Width="160"
+                                                        DisplayMemberBinding="{Binding Process}" />
+                                    </MenuItem.Tag>
+                                </MenuItem>
                                 <Separator />
                                 <MenuItem Header="Content-Type" IsCheckable="True" IsChecked="False"
-                                          Tag="{x:Reference ContentTypeColumn}"
-                                          Checked="ColumnVisibility_Changed" Unchecked="ColumnVisibility_Changed" />
+                                          Checked="ColumnVisibility_Changed" Unchecked="ColumnVisibility_Changed">
+                                    <MenuItem.Tag>
+                                        <GridViewColumn Header="Content-Type" Width="200"
+                                                        DisplayMemberBinding="{Binding ContentType}" />
+                                    </MenuItem.Tag>
+                                </MenuItem>
                                 <MenuItem Header="Client-Request-Id" IsCheckable="True" IsChecked="False"
-                                          Tag="{x:Reference ClientRequestIdColumn}"
-                                          Checked="ColumnVisibility_Changed" Unchecked="ColumnVisibility_Changed" />
+                                          Checked="ColumnVisibility_Changed" Unchecked="ColumnVisibility_Changed">
+                                    <MenuItem.Tag>
+                                        <GridViewColumn Header="Client-Request-Id" Width="200"
+                                                        DisplayMemberBinding="{Binding ClientRequestId}" />
+                                    </MenuItem.Tag>
+                                </MenuItem>
                                 <MenuItem Header="SOAP Method" IsCheckable="True" IsChecked="False"
-                                          Tag="{x:Reference SoapMethodColumn}"
-                                          Checked="ColumnVisibility_Changed" Unchecked="ColumnVisibility_Changed" />
+                                          Checked="ColumnVisibility_Changed" Unchecked="ColumnVisibility_Changed">
+                                    <MenuItem.Tag>
+                                        <GridViewColumn Header="SOAP Method" Width="200"
+                                                        DisplayMemberBinding="{Binding SoapMethod}" />
+                                    </MenuItem.Tag>
+                                </MenuItem>
                                 <MenuItem Header="X-RequestId" IsCheckable="True" IsChecked="False"
-                                          Tag="{x:Reference XRequestIdColumn}"
-                                          Checked="ColumnVisibility_Changed" Unchecked="ColumnVisibility_Changed" />
-                                <Separator />
+                                          Checked="ColumnVisibility_Changed" Unchecked="ColumnVisibility_Changed">
+                                    <MenuItem.Tag>
+                                        <GridViewColumn Header="X-RequestId" Width="200"
+                                                        DisplayMemberBinding="{Binding XRequestId}" />
+                                    </MenuItem.Tag>
+                                </MenuItem>
+                                <Separator x:Name="ColumnActionsSeparator" />
                                 <MenuItem Header="Auto-size Columns" Click="AutoSizeColumns_Click" />
                             </ContextMenu>
                         </GridView.ColumnHeaderContextMenu>
-                        <GridViewColumn x:Name="DateColumn" Header="Date" Width="0"
-                                        DisplayMemberBinding="{Binding Date}" />
                         <GridViewColumn x:Name="TimeColumn" Header="Time" Width="90"
                                         DisplayMemberBinding="{Binding Time}" />
                         <GridViewColumn x:Name="MethodColumn" Header="Method" Width="70"
@@ -417,33 +385,24 @@
                                         DisplayMemberBinding="{Binding Response}" />
                         <GridViewColumn x:Name="LatencyColumn" Header="Latency (ms)" Width="90"
                                         DisplayMemberBinding="{Binding Latency, StringFormat=N0}" />
-                        <GridViewColumn x:Name="UrlColumn" Header="URL" Width="0"
-                                        DisplayMemberBinding="{Binding Url}" />
                         <GridViewColumn x:Name="HostColumn" Header="Host" Width="160"
                                         DisplayMemberBinding="{Binding Host}" />
                         <GridViewColumn x:Name="PathColumn" Header="Path" Width="240"
                                         DisplayMemberBinding="{Binding Path}" />
-                        <GridViewColumn x:Name="ContentTypeColumn" Header="Content-Type" Width="0"
-                                        DisplayMemberBinding="{Binding ContentType}" />
-                        <GridViewColumn x:Name="ClientRequestIdColumn" Header="Client-Request-Id" Width="0"
-                                        DisplayMemberBinding="{Binding ClientRequestId}" />
-                        <GridViewColumn x:Name="SoapMethodColumn" Header="SOAP Method" Width="0"
-                                        DisplayMemberBinding="{Binding SoapMethod}" />
-                        <GridViewColumn x:Name="XRequestIdColumn" Header="X-RequestId" Width="0"
-                                        DisplayMemberBinding="{Binding XRequestId}" />
                     </GridView>
                 </ListView.View>
             </ListView>
             </Grid>
 
-            <GridSplitter Grid.Column="1" Width="4" HorizontalAlignment="Stretch"
+            <GridSplitter x:Name="VerticalWorkspaceSplitter"
+                          Grid.Row="0" Grid.Column="1" Width="4" HorizontalAlignment="Stretch"
                           VerticalAlignment="Stretch"
                           Background="{DynamicResource ControlFillColorDefaultBrush}" />
 
-            <TabControl Grid.Column="2" x:Name="MainTabControl" 
+            <TabControl Grid.Row="0" Grid.Column="2" x:Name="MainTabControl"
                         SelectionChanged="MainTabControl_SelectionChanged"
                         PreviewMouseDown="MainTabControl_PreviewMouseDown">
-                <TabItem Header="Summary">
+                <TabItem x:Name="SummaryTab" Header="Summary">
                     <RichTextBox x:Name="SummaryViewer" IsReadOnly="True"
                                  VerticalScrollBarVisibility="Auto"
                                  HorizontalScrollBarVisibility="Auto"
@@ -459,7 +418,7 @@
                         </RichTextBox.ContextMenu>
                     </RichTextBox>
                 </TabItem>
-                <TabItem Header="Request">
+                <TabItem x:Name="RequestTab" Header="Request">
                     <Grid x:Name="RequestViewerGrid" SizeChanged="RequestViewerGrid_SizeChanged" Visibility="Collapsed">
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto" />
@@ -469,7 +428,36 @@
                             <RowDefinition x:Name="RequestPayloadRow" Height="*" />
                         </Grid.RowDefinitions>
                         <TextBlock Grid.Row="0" Text="Headers" FontWeight="Bold" Margin="4,4,4,2" />
+                        <Grid Grid.Row="1" x:Name="RequestHeadersPanel">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="*" />
+                            </Grid.RowDefinitions>
+                            <Border x:Name="RequestHeadersFindBar" Grid.Row="0" Visibility="Collapsed"
+                                    Background="{DynamicResource LayerFillColorDefaultBrush}"
+                                    BorderBrush="{DynamicResource DividerStrokeColorDefaultBrush}"
+                                    BorderThickness="0,0,0,1" Padding="4">
+                                <DockPanel LastChildFill="True">
+                                    <Button DockPanel.Dock="Right" Content="&#xE711;" Tag="RequestHeaders"
+                                            FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" Padding="7,2"
+                                            ToolTip="Close" Click="LocalFindCloseButton_Click" />
+                                    <Button DockPanel.Dock="Right" Content="&#xE72A;" Tag="RequestHeaders" Margin="4,0,0,0"
+                                            FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" Padding="7,2"
+                                            ToolTip="Next match (Enter)" Click="LocalFindNextButton_Click" />
+                                    <Button DockPanel.Dock="Right" Content="&#xE70E;" Tag="RequestHeaders" Margin="4,0,0,0"
+                                            FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" Padding="7,2"
+                                            ToolTip="Previous match (Shift+Enter)" Click="LocalFindPreviousButton_Click" />
+                                    <TextBlock x:Name="RequestHeadersFindStatus" DockPanel.Dock="Right" Margin="8,0,4,0"
+                                               VerticalAlignment="Center" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                                    <TextBlock DockPanel.Dock="Left" Text="Find" Margin="0,0,8,0"
+                                               VerticalAlignment="Center" FontWeight="SemiBold" />
+                                    <TextBox x:Name="RequestHeadersFindText" Tag="RequestHeaders"
+                                             VerticalContentAlignment="Center" KeyDown="LocalFindText_KeyDown"
+                                             TextChanged="LocalFindText_TextChanged" />
+                                </DockPanel>
+                            </Border>
                         <TextBox Grid.Row="1" x:Name="RequestHeadersText" IsReadOnly="True"
+                                 IsInactiveSelectionHighlightEnabled="True"
                                  FontFamily="Consolas" TextWrapping="NoWrap" AcceptsReturn="True"
                                  VerticalScrollBarVisibility="Auto"
                                  HorizontalScrollBarVisibility="Auto">
@@ -483,6 +471,7 @@
                                 </ContextMenu>
                             </TextBox.ContextMenu>
                         </TextBox>
+                        </Grid>
                         <GridSplitter x:Name="RequestPayloadSplitter" Grid.Row="2" Height="4"
                                       HorizontalAlignment="Stretch" VerticalAlignment="Center"
                                       Background="{DynamicResource ControlFillColorDefaultBrush}" />
@@ -504,8 +493,35 @@
                                        Margin="12,0,0,0"
                                        Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
                         </StackPanel>
-                        <Grid Grid.Row="4">
-                            <avalonedit:TextEditor x:Name="RequestPayloadEditor"
+                        <Grid Grid.Row="4" x:Name="RequestBodyPanel">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="*" />
+                            </Grid.RowDefinitions>
+                            <Border x:Name="RequestBodyFindBar" Grid.Row="0" Visibility="Collapsed"
+                                    Background="{DynamicResource LayerFillColorDefaultBrush}"
+                                    BorderBrush="{DynamicResource DividerStrokeColorDefaultBrush}"
+                                    BorderThickness="0,0,0,1" Padding="4">
+                                <DockPanel LastChildFill="True">
+                                    <Button DockPanel.Dock="Right" Content="&#xE711;" Tag="RequestBody"
+                                            FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" Padding="7,2"
+                                            ToolTip="Close" Click="LocalFindCloseButton_Click" />
+                                    <Button DockPanel.Dock="Right" Content="&#xE72A;" Tag="RequestBody" Margin="4,0,0,0"
+                                            FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" Padding="7,2"
+                                            ToolTip="Next match (Enter)" Click="LocalFindNextButton_Click" />
+                                    <Button DockPanel.Dock="Right" Content="&#xE70E;" Tag="RequestBody" Margin="4,0,0,0"
+                                            FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" Padding="7,2"
+                                            ToolTip="Previous match (Shift+Enter)" Click="LocalFindPreviousButton_Click" />
+                                    <TextBlock x:Name="RequestBodyFindStatus" DockPanel.Dock="Right" Margin="8,0,4,0"
+                                               VerticalAlignment="Center" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                                    <TextBlock DockPanel.Dock="Left" Text="Find" Margin="0,0,8,0"
+                                               VerticalAlignment="Center" FontWeight="SemiBold" />
+                                    <TextBox x:Name="RequestBodyFindText" Tag="RequestBody"
+                                             VerticalContentAlignment="Center" KeyDown="LocalFindText_KeyDown"
+                                             TextChanged="LocalFindText_TextChanged" />
+                                </DockPanel>
+                            </Border>
+                            <avalonedit:TextEditor Grid.Row="1" x:Name="RequestPayloadEditor"
                                                    IsReadOnly="True" ShowLineNumbers="True"
                                                    FontFamily="Consolas"
                                                    VerticalScrollBarVisibility="Auto"
@@ -520,7 +536,7 @@
                                     </ContextMenu>
                                 </avalonedit:TextEditor.ContextMenu>
                             </avalonedit:TextEditor>
-                            <ScrollViewer x:Name="RequestPayloadImageScroll"
+                            <ScrollViewer Grid.Row="1" x:Name="RequestPayloadImageScroll"
                                           HorizontalScrollBarVisibility="Auto"
                                           VerticalScrollBarVisibility="Auto"
                                           Background="White"
@@ -528,7 +544,7 @@
                                 <Image x:Name="RequestPayloadImage" Stretch="None"
                                        HorizontalAlignment="Left" VerticalAlignment="Top" />
                             </ScrollViewer>
-                            <ScrollViewer x:Name="RequestPayloadSvgScroll"
+                            <ScrollViewer Grid.Row="1" x:Name="RequestPayloadSvgScroll"
                                           HorizontalScrollBarVisibility="Auto"
                                           VerticalScrollBarVisibility="Auto"
                                           Background="White"
@@ -537,7 +553,7 @@
                                                  HorizontalAlignment="Left"
                                                  VerticalAlignment="Top" />
                             </ScrollViewer>
-                            <TextBlock x:Name="RequestNoPayloadText" Text="(no payload)"
+                            <TextBlock Grid.Row="1" x:Name="RequestNoPayloadText" Text="(no payload)"
                                        FontStyle="Italic"
                                        Foreground="{DynamicResource TextFillColorSecondaryBrush}" Padding="6"
                                        VerticalAlignment="Top" HorizontalAlignment="Left"
@@ -545,7 +561,7 @@
                         </Grid>
                     </Grid>
                 </TabItem>
-                <TabItem Header="Response">
+                <TabItem x:Name="ResponseTab" Header="Response">
                     <Grid x:Name="ResponseViewerGrid" SizeChanged="ResponseViewerGrid_SizeChanged" Visibility="Collapsed">
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto" />
@@ -555,7 +571,36 @@
                             <RowDefinition x:Name="ResponsePayloadRow" Height="*" />
                         </Grid.RowDefinitions>
                         <TextBlock Grid.Row="0" Text="Headers" FontWeight="Bold" Margin="4,4,4,2" />
+                        <Grid Grid.Row="1" x:Name="ResponseHeadersPanel">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="*" />
+                            </Grid.RowDefinitions>
+                            <Border x:Name="ResponseHeadersFindBar" Grid.Row="0" Visibility="Collapsed"
+                                    Background="{DynamicResource LayerFillColorDefaultBrush}"
+                                    BorderBrush="{DynamicResource DividerStrokeColorDefaultBrush}"
+                                    BorderThickness="0,0,0,1" Padding="4">
+                                <DockPanel LastChildFill="True">
+                                    <Button DockPanel.Dock="Right" Content="&#xE711;" Tag="ResponseHeaders"
+                                            FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" Padding="7,2"
+                                            ToolTip="Close" Click="LocalFindCloseButton_Click" />
+                                    <Button DockPanel.Dock="Right" Content="&#xE72A;" Tag="ResponseHeaders" Margin="4,0,0,0"
+                                            FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" Padding="7,2"
+                                            ToolTip="Next match (Enter)" Click="LocalFindNextButton_Click" />
+                                    <Button DockPanel.Dock="Right" Content="&#xE70E;" Tag="ResponseHeaders" Margin="4,0,0,0"
+                                            FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" Padding="7,2"
+                                            ToolTip="Previous match (Shift+Enter)" Click="LocalFindPreviousButton_Click" />
+                                    <TextBlock x:Name="ResponseHeadersFindStatus" DockPanel.Dock="Right" Margin="8,0,4,0"
+                                               VerticalAlignment="Center" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                                    <TextBlock DockPanel.Dock="Left" Text="Find" Margin="0,0,8,0"
+                                               VerticalAlignment="Center" FontWeight="SemiBold" />
+                                    <TextBox x:Name="ResponseHeadersFindText" Tag="ResponseHeaders"
+                                             VerticalContentAlignment="Center" KeyDown="LocalFindText_KeyDown"
+                                             TextChanged="LocalFindText_TextChanged" />
+                                </DockPanel>
+                            </Border>
                         <TextBox Grid.Row="1" x:Name="ResponseHeadersText" IsReadOnly="True"
+                                 IsInactiveSelectionHighlightEnabled="True"
                                  FontFamily="Consolas" TextWrapping="NoWrap" AcceptsReturn="True"
                                  VerticalScrollBarVisibility="Auto"
                                  HorizontalScrollBarVisibility="Auto">
@@ -569,6 +614,7 @@
                                 </ContextMenu>
                             </TextBox.ContextMenu>
                         </TextBox>
+                        </Grid>
                         <GridSplitter x:Name="ResponsePayloadSplitter" Grid.Row="2" Height="4"
                                       HorizontalAlignment="Stretch" VerticalAlignment="Center"
                                       Background="{DynamicResource ControlFillColorDefaultBrush}" />
@@ -590,8 +636,35 @@
                                        Margin="12,0,0,0"
                                        Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
                         </StackPanel>
-                        <Grid Grid.Row="4">
-                            <avalonedit:TextEditor x:Name="ResponsePayloadEditor"
+                        <Grid Grid.Row="4" x:Name="ResponseBodyPanel">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="*" />
+                            </Grid.RowDefinitions>
+                            <Border x:Name="ResponseBodyFindBar" Grid.Row="0" Visibility="Collapsed"
+                                    Background="{DynamicResource LayerFillColorDefaultBrush}"
+                                    BorderBrush="{DynamicResource DividerStrokeColorDefaultBrush}"
+                                    BorderThickness="0,0,0,1" Padding="4">
+                                <DockPanel LastChildFill="True">
+                                    <Button DockPanel.Dock="Right" Content="&#xE711;" Tag="ResponseBody"
+                                            FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" Padding="7,2"
+                                            ToolTip="Close" Click="LocalFindCloseButton_Click" />
+                                    <Button DockPanel.Dock="Right" Content="&#xE72A;" Tag="ResponseBody" Margin="4,0,0,0"
+                                            FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" Padding="7,2"
+                                            ToolTip="Next match (Enter)" Click="LocalFindNextButton_Click" />
+                                    <Button DockPanel.Dock="Right" Content="&#xE70E;" Tag="ResponseBody" Margin="4,0,0,0"
+                                            FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" Padding="7,2"
+                                            ToolTip="Previous match (Shift+Enter)" Click="LocalFindPreviousButton_Click" />
+                                    <TextBlock x:Name="ResponseBodyFindStatus" DockPanel.Dock="Right" Margin="8,0,4,0"
+                                               VerticalAlignment="Center" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                                    <TextBlock DockPanel.Dock="Left" Text="Find" Margin="0,0,8,0"
+                                               VerticalAlignment="Center" FontWeight="SemiBold" />
+                                    <TextBox x:Name="ResponseBodyFindText" Tag="ResponseBody"
+                                             VerticalContentAlignment="Center" KeyDown="LocalFindText_KeyDown"
+                                             TextChanged="LocalFindText_TextChanged" />
+                                </DockPanel>
+                            </Border>
+                            <avalonedit:TextEditor Grid.Row="1" x:Name="ResponsePayloadEditor"
                                                    IsReadOnly="True" ShowLineNumbers="True"
                                                    FontFamily="Consolas"
                                                    VerticalScrollBarVisibility="Auto"
@@ -606,7 +679,7 @@
                                     </ContextMenu>
                                 </avalonedit:TextEditor.ContextMenu>
                             </avalonedit:TextEditor>
-                            <ScrollViewer x:Name="ResponsePayloadImageScroll"
+                            <ScrollViewer Grid.Row="1" x:Name="ResponsePayloadImageScroll"
                                           HorizontalScrollBarVisibility="Auto"
                                           VerticalScrollBarVisibility="Auto"
                                           Background="White"
@@ -614,7 +687,7 @@
                                 <Image x:Name="ResponsePayloadImage" Stretch="None"
                                        HorizontalAlignment="Left" VerticalAlignment="Top" />
                             </ScrollViewer>
-                            <ScrollViewer x:Name="ResponsePayloadSvgScroll"
+                            <ScrollViewer Grid.Row="1" x:Name="ResponsePayloadSvgScroll"
                                           HorizontalScrollBarVisibility="Auto"
                                           VerticalScrollBarVisibility="Auto"
                                           Background="White"
@@ -623,7 +696,7 @@
                                                  HorizontalAlignment="Left"
                                                  VerticalAlignment="Top" />
                             </ScrollViewer>
-                            <TextBlock x:Name="ResponseNoPayloadText" Text="(no payload)"
+                            <TextBlock Grid.Row="1" x:Name="ResponseNoPayloadText" Text="(no payload)"
                                        FontStyle="Italic"
                                        Foreground="{DynamicResource TextFillColorSecondaryBrush}" Padding="6"
                                        VerticalAlignment="Top" HorizontalAlignment="Left"
@@ -631,7 +704,7 @@
                         </Grid>
                     </Grid>
                 </TabItem>
-                <TabItem Header="REST">
+                <TabItem x:Name="RestTab" Header="REST">
                     <Grid>
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto" MaxHeight="300" />
@@ -672,7 +745,7 @@
                         </TreeView>
                     </Grid>
                 </TabItem>
-                <TabItem Header="SOAP">
+                <TabItem x:Name="SoapTab" Header="SOAP">
                     <RichTextBox x:Name="SoapViewer" IsReadOnly="True"
                                  VerticalScrollBarVisibility="Auto"
                                  HorizontalScrollBarVisibility="Auto"
@@ -688,7 +761,7 @@
                         </RichTextBox.ContextMenu>
                     </RichTextBox>
                 </TabItem>
-                <TabItem Header="MAPI">
+                <TabItem x:Name="MapiTab" Header="MAPI">
                     <RichTextBox x:Name="MapiViewer" IsReadOnly="True"
                                  VerticalScrollBarVisibility="Auto"
                                  HorizontalScrollBarVisibility="Auto"
@@ -704,6 +777,50 @@
                         </RichTextBox.ContextMenu>
                     </RichTextBox>
                 </TabItem>
+            </TabControl>
+
+            <GridSplitter x:Name="HorizontalWorkspaceSplitter"
+                          Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="3"
+                          Height="4" HorizontalAlignment="Stretch"
+                          VerticalAlignment="Stretch"
+                          Background="{DynamicResource ControlFillColorDefaultBrush}"
+                          Visibility="Collapsed" />
+
+            <TabControl x:Name="TopLayoutTabControl"
+                        Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="3"
+                        Visibility="Collapsed">
+                <TabItem x:Name="TopSummaryTab" Header="Summary" />
+                <TabItem Header="Request / Response">
+                    <Grid x:Name="SplitDetailsPane">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" MinWidth="200" />
+                            <ColumnDefinition Width="4" />
+                            <ColumnDefinition Width="*" MinWidth="200" />
+                        </Grid.ColumnDefinitions>
+                        <Grid Grid.Column="0">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="*" />
+                            </Grid.RowDefinitions>
+                            <TextBlock Text="Request" FontWeight="SemiBold" Margin="6,4" />
+                            <ContentControl x:Name="SplitRequestHost" Grid.Row="1" />
+                        </Grid>
+                        <GridSplitter Grid.Column="1" Width="4" HorizontalAlignment="Stretch"
+                                      VerticalAlignment="Stretch"
+                                      Background="{DynamicResource ControlFillColorDefaultBrush}" />
+                        <Grid Grid.Column="2">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="*" />
+                            </Grid.RowDefinitions>
+                            <TextBlock Text="Response" FontWeight="SemiBold" Margin="6,4" />
+                            <ContentControl x:Name="SplitResponseHost" Grid.Row="1" />
+                        </Grid>
+                    </Grid>
+                </TabItem>
+                <TabItem x:Name="TopRestTab" Header="REST" />
+                <TabItem x:Name="TopSoapTab" Header="SOAP" />
+                <TabItem x:Name="TopMapiTab" Header="MAPI" />
             </TabControl>
         </Grid>
     </DockPanel>

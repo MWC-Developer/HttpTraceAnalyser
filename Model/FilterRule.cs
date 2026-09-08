@@ -21,13 +21,14 @@ namespace HttpTraceAnalyser.Model
         Index,
         ReasonPhrase,
         Latency,
+        Process,
         ContentType,
         ClientRequestId,
         SoapMethod,
         XRequestId,
         /// <summary>
-        /// A plugin-contributed extended field. The actual column name is held in
-        /// <see cref="FilterRule.CustomFieldName"/> (see <see cref="HttpTraceFile.ExtendedFieldNames"/>).
+        /// A dynamically named field. The actual column name is held in
+        /// <see cref="FilterRule.CustomFieldName"/>.
         /// </summary>
         Custom,
     }
@@ -38,6 +39,7 @@ namespace HttpTraceAnalyser.Model
         Equals,
         NotEquals,
         Contains,
+        DoesNotContain,
         StartsWith,
         /// <summary>Numeric inclusive range, formatted as "min-max".</summary>
         Range,
@@ -68,18 +70,45 @@ namespace HttpTraceAnalyser.Model
         public FilterField Field
         {
             get => _field;
-            set => Set(ref _field, value);
+            set
+            {
+                if (Set(ref _field, value))
+                    OnPropertyChanged(nameof(ColumnName));
+            }
+        }
+
+        public string ColumnName
+        {
+            get => Field == FilterField.Custom ? CustomFieldName : Field.ToString();
+            set
+            {
+                var name = value ?? string.Empty;
+                if (Enum.TryParse<FilterField>(name, ignoreCase: true, out var parsedField) &&
+                    parsedField != FilterField.Custom)
+                {
+                    Field = parsedField;
+                    CustomFieldName = string.Empty;
+                }
+                else
+                {
+                    CustomFieldName = name;
+                    Field = FilterField.Custom;
+                }
+            }
         }
 
         /// <summary>
-        /// Name of the plugin-contributed extended field to filter on, used when
-        /// <see cref="Field"/> is <see cref="FilterField.Custom"/>. Must match a name in
-        /// <see cref="HttpTraceFile.ExtendedFieldNames"/>.
+        /// Name of the dynamically named field to filter on, used when
+        /// <see cref="Field"/> is <see cref="FilterField.Custom"/>.
         /// </summary>
         public string CustomFieldName
         {
             get => _customFieldName;
-            set => Set(ref _customFieldName, value ?? string.Empty);
+            set
+            {
+                if (Set(ref _customFieldName, value ?? string.Empty) && Field == FilterField.Custom)
+                    OnPropertyChanged(nameof(ColumnName));
+            }
         }
 
         public FilterComparator Comparator
@@ -100,25 +129,28 @@ namespace HttpTraceAnalyser.Model
         /// </summary>
         internal string BuildExpression()
         {
-            var column = Field == FilterField.Custom ? CustomFieldName : Field.ToString();
+            var column = ColumnName;
             if (string.IsNullOrEmpty(column))
                 return string.Empty;
-            var isNumeric = Field is FilterField.Response or FilterField.Index or FilterField.Latency;
+            var isNumeric = HttpTraceFile.IsNumericField(column);
 
             switch (Comparator)
             {
                 case FilterComparator.Equals:
-                    return isNumeric && TryParseInt(Value, out var eq)
-                        ? $"[{column}] = {eq}"
+                    return isNumeric && TryParseNumber(Value, out var eq)
+                        ? $"[{column}] = {eq.ToString(CultureInfo.InvariantCulture)}"
                         : $"[{column}] = {QuoteString(Value)}";
 
                 case FilterComparator.NotEquals:
-                    return isNumeric && TryParseInt(Value, out var ne)
-                        ? $"[{column}] <> {ne}"
+                    return isNumeric && TryParseNumber(Value, out var ne)
+                        ? $"[{column}] <> {ne.ToString(CultureInfo.InvariantCulture)}"
                         : $"[{column}] <> {QuoteString(Value)}";
 
                 case FilterComparator.Contains:
                     return $"[{column}] LIKE {QuoteString("%" + EscapeLike(Value) + "%")}";
+
+                case FilterComparator.DoesNotContain:
+                    return $"NOT ([{column}] LIKE {QuoteString("%" + EscapeLike(Value) + "%")})";
 
                 case FilterComparator.StartsWith:
                     return $"[{column}] LIKE {QuoteString(EscapeLike(Value) + "%")}";
@@ -140,37 +172,51 @@ namespace HttpTraceAnalyser.Model
 
             if (isNumeric)
             {
-                if (!TryParseInt(minText, out var min) || !TryParseInt(maxText, out var max))
+                if (!TryParseNumber(minText, out var min) || !TryParseNumber(maxText, out var max))
                     return string.Empty;
-                return $"([{column}] >= {min} AND [{column}] <= {max})";
+                return $"([{column}] >= {min.ToString(CultureInfo.InvariantCulture)} AND [{column}] <= {max.ToString(CultureInfo.InvariantCulture)})";
             }
 
             return $"([{column}] >= {QuoteString(minText)} AND [{column}] <= {QuoteString(maxText)})";
         }
 
-        private static bool TryParseInt(string text, out int value)
-            => int.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out value);
+        private static bool TryParseNumber(string text, out double value)
+            => double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out value);
 
         private static string QuoteString(string s) => "'" + s.Replace("'", "''") + "'";
 
         private static string EscapeLike(string s)
             => s.Replace("[", "[[]").Replace("%", "[%]").Replace("_", "[_]");
 
+        internal FilterRule Clone() => new()
+        {
+            Combinator = Combinator,
+            Field = Field,
+            Comparator = Comparator,
+            Value = Value,
+            CustomFieldName = CustomFieldName,
+        };
+
         public event PropertyChangedEventHandler? PropertyChanged;
 
-        private void Set<T>(ref T field, T value, [CallerMemberName] string? name = null)
+        private bool Set<T>(ref T field, T value, [CallerMemberName] string? name = null)
         {
             if (Equals(field, value))
-                return;
+                return false;
             field = value;
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name!));
-            FilterRuleSet.NotifyRuleChanged(this);
+            OnPropertyChanged(name!);
+            return true;
         }
+
+        private void OnPropertyChanged(string name)
+            => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
     }
 
     /// <summary>Central store of active filter rules; combined left-to-right using each rule's <see cref="FilterRule.Combinator"/>.</summary>
     public static class FilterRuleSet
     {
+        private static bool _suppressNotifications;
+
         public static ObservableCollection<FilterRule> Rules { get; } = new();
 
         public static event EventHandler? FiltersChanged;
@@ -178,6 +224,36 @@ namespace HttpTraceAnalyser.Model
         static FilterRuleSet()
         {
             Rules.CollectionChanged += OnCollectionChanged;
+            if (System.IO.File.Exists(RulePersistence.FilterDefaultPath))
+            {
+                try
+                {
+                    ReplaceRules(RulePersistence.LoadFilters(RulePersistence.FilterDefaultPath));
+                }
+                catch
+                {
+                    // A bad user default must not prevent application startup.
+                }
+            }
+        }
+
+        /// <summary>Replaces the active rules with the given set, e.g. after a dialog commits its draft.</summary>
+        public static void Replace(System.Collections.Generic.IEnumerable<FilterRule> rules) => ReplaceRules(rules);
+
+        private static void ReplaceRules(System.Collections.Generic.IEnumerable<FilterRule> rules)
+        {
+            _suppressNotifications = true;
+            try
+            {
+                Rules.Clear();
+                foreach (var rule in rules)
+                    Rules.Add(rule);
+            }
+            finally
+            {
+                _suppressNotifications = false;
+            }
+            RaiseChanged();
         }
 
         private static void OnCollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
@@ -199,9 +275,11 @@ namespace HttpTraceAnalyser.Model
 
         private static void OnRulePropertyChanged(object? sender, PropertyChangedEventArgs e) => RaiseChanged();
 
-        internal static void NotifyRuleChanged(FilterRule rule) => RaiseChanged();
-
-        private static void RaiseChanged() => FiltersChanged?.Invoke(null, EventArgs.Empty);
+        private static void RaiseChanged()
+        {
+            if (!_suppressNotifications)
+                FiltersChanged?.Invoke(null, EventArgs.Empty);
+        }
 
         /// <summary>
         /// Builds a <see cref="System.Data.DataView.RowFilter"/> expression that combines all rules

@@ -13,6 +13,14 @@ namespace HttpTraceAnalyser
         Dark,
     }
 
+    /// <summary>User's theme choice: Auto follows the system theme, others force a specific theme.</summary>
+    public enum ThemePreference
+    {
+        Auto,
+        Light,
+        Dark,
+    }
+
     /// <summary>
     /// Detects and tracks the system theme and drives WPF's built-in Fluent
     /// theme (Application.ThemeMode), which themes all standard controls for
@@ -56,6 +64,23 @@ namespace HttpTraceAnalyser
             Current = theme;
             ThemeChanged?.Invoke(null, EventArgs.Empty);
         }
+
+        internal static Brush GetContrastingForeground(Color backgroundColor)
+            => GetContrastingColor(backgroundColor) == Colors.White ? Brushes.White : Brushes.Black;
+
+        internal static Color GetContrastingColor(Color backgroundColor)
+        {
+            double r = backgroundColor.R / 255.0;
+            double g = backgroundColor.G / 255.0;
+            double b = backgroundColor.B / 255.0;
+
+            r = r <= 0.03928 ? r / 12.92 : Math.Pow((r + 0.055) / 1.055, 2.4);
+            g = g <= 0.03928 ? g / 12.92 : Math.Pow((g + 0.055) / 1.055, 2.4);
+            b = b <= 0.03928 ? b / 12.92 : Math.Pow((b + 0.055) / 1.055, 2.4);
+
+            double luminance = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+            return luminance < 0.5 ? Colors.White : Colors.Black;
+        }
     }
 
     /// <summary>
@@ -96,7 +121,7 @@ namespace HttpTraceAnalyser
                 return explicitForeground;
 
             if (values.Length > 1 && values[1] is SolidColorBrush backgroundBrush)
-                return GetContrastingForeground(backgroundBrush.Color);
+                return ThemeManager.GetContrastingForeground(backgroundBrush.Color);
 
             return Application.Current?.TryFindResource("TextFillColorPrimaryBrush") as Brush
                 ?? SystemColors.ControlTextBrush;
@@ -105,27 +130,5 @@ namespace HttpTraceAnalyser
         public object[] ConvertBack(object value, Type[] targetTypes, object? parameter, CultureInfo culture)
             => throw new NotSupportedException();
 
-        /// <summary>
-        /// Returns a contrasting foreground brush (black or white) based on the brightness
-        /// of the given background color, ensuring text remains readable.
-        /// </summary>
-        private static Brush GetContrastingForeground(Color backgroundColor)
-        {
-            // Calculate relative luminance using the standard formula (Rec. 709)
-            // https://www.w3.org/TR/WCAG20/#relativeluminancedef
-            double r = backgroundColor.R / 255.0;
-            double g = backgroundColor.G / 255.0;
-            double b = backgroundColor.B / 255.0;
-
-            // Apply gamma correction
-            r = r <= 0.03928 ? r / 12.92 : Math.Pow((r + 0.055) / 1.055, 2.4);
-            g = g <= 0.03928 ? g / 12.92 : Math.Pow((g + 0.055) / 1.055, 2.4);
-            b = b <= 0.03928 ? b / 12.92 : Math.Pow((b + 0.055) / 1.055, 2.4);
-
-            double luminance = 0.2126 * r + 0.7152 * g + 0.0722 * b;
-
-            // Use white text for dark backgrounds (luminance < 0.5), black for light backgrounds
-            return luminance < 0.5 ? Brushes.White : Brushes.Black;
-        }
     }
 }

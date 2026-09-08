@@ -1,0 +1,99 @@
+<Window x:Class="HttpTraceAnalyser.RegexCheatSheetWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Regex Cheat Sheet" Height="480" Width="560"
+        MinHeight="300" MinWidth="420"
+        WindowStartupLocation="CenterOwner"
+        ShowInTaskbar="False"
+        Background="{DynamicResource ApplicationBackgroundBrush}"
+        Foreground="{DynamicResource TextFillColorPrimaryBrush}">
+    <Window.Resources>
+        <Style x:Key="SelectablePatternStyle" TargetType="TextBox">
+            <Setter Property="IsReadOnly" Value="True" />
+            <Setter Property="IsReadOnlyCaretVisible" Value="True" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}" />
+            <Setter Property="FontFamily" Value="Consolas" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="Margin" Value="0" />
+            <Setter Property="VerticalAlignment" Value="Top" />
+        </Style>
+        <Style x:Key="SelectableTokenStyle" TargetType="TextBox" BasedOn="{StaticResource SelectablePatternStyle}">
+            <Setter Property="FontWeight" Value="Bold" />
+            <Setter Property="MinWidth" Value="90" />
+        </Style>
+    </Window.Resources>
+    <ScrollViewer VerticalScrollBarVisibility="Auto" Margin="12">
+        <StackPanel>
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <Grid.RowDefinitions>
+                    <RowDefinition />
+                    <RowDefinition />
+                    <RowDefinition />
+                    <RowDefinition />
+                    <RowDefinition />
+                    <RowDefinition />
+                    <RowDefinition />
+                    <RowDefinition />
+                    <RowDefinition />
+                    <RowDefinition />
+                    <RowDefinition />
+                </Grid.RowDefinitions>
+
+                <TextBox Grid.Row="0" Grid.Column="0" Text="^" Style="{StaticResource SelectableTokenStyle}" />
+                <TextBlock Grid.Row="0" Grid.Column="1" Text="start of string" TextWrapping="Wrap" VerticalAlignment="Center" />
+
+                <TextBox Grid.Row="1" Grid.Column="0" Text="$" Style="{StaticResource SelectableTokenStyle}" />
+                <TextBlock Grid.Row="1" Grid.Column="1" Text="end of string" TextWrapping="Wrap" VerticalAlignment="Center" />
+
+                <TextBox Grid.Row="2" Grid.Column="0" Text="." Style="{StaticResource SelectableTokenStyle}" />
+                <TextBlock Grid.Row="2" Grid.Column="1" Text="any character" TextWrapping="Wrap" VerticalAlignment="Center" />
+
+                <TextBox Grid.Row="3" Grid.Column="0" Text="*" Style="{StaticResource SelectableTokenStyle}" />
+                <TextBlock Grid.Row="3" Grid.Column="1" Text="0 or more of the preceding token" TextWrapping="Wrap" VerticalAlignment="Center" />
+
+                <TextBox Grid.Row="4" Grid.Column="0" Text="+" Style="{StaticResource SelectableTokenStyle}" />
+                <TextBlock Grid.Row="4" Grid.Column="1" Text="1 or more of the preceding token" TextWrapping="Wrap" VerticalAlignment="Center" />
+
+                <TextBox Grid.Row="5" Grid.Column="0" Text="?" Style="{StaticResource SelectableTokenStyle}" />
+                <TextBlock Grid.Row="5" Grid.Column="1" Text="0 or 1 of the preceding token (optional)" TextWrapping="Wrap" VerticalAlignment="Center" />
+
+                <TextBox Grid.Row="6" Grid.Column="0" Text="|" Style="{StaticResource SelectableTokenStyle}" />
+                <TextBlock Grid.Row="6" Grid.Column="1" Text="alternation, e.g. Foo|Bar matches Foo or Bar" TextWrapping="Wrap" VerticalAlignment="Center" />
+
+                <TextBox Grid.Row="7" Grid.Column="0" Text="[abc]" Style="{StaticResource SelectableTokenStyle}" />
+                <TextBlock Grid.Row="7" Grid.Column="1" Text="any one of a, b, or c" TextWrapping="Wrap" VerticalAlignment="Center" />
+
+                <TextBox Grid.Row="8" Grid.Column="0" Text="[^abc]" Style="{StaticResource SelectableTokenStyle}" />
+                <TextBlock Grid.Row="8" Grid.Column="1" Text="any character except a, b, or c" TextWrapping="Wrap" VerticalAlignment="Center" />
+
+                <TextBox Grid.Row="9" Grid.Column="0" Text="\d \w \s" Style="{StaticResource SelectableTokenStyle}" />
+                <TextBlock Grid.Row="9" Grid.Column="1" Text="digit, word character, whitespace" TextWrapping="Wrap" VerticalAlignment="Center" />
+
+                <TextBox Grid.Row="10" Grid.Column="0" Text="( )" Style="{StaticResource SelectableTokenStyle}" />
+                <TextBlock Grid.Row="10" Grid.Column="1" Text="capture group; used by value patterns to select the match text" TextWrapping="Wrap" VerticalAlignment="Center" />
+            </Grid>
+
+            <TextBlock Text="Examples:" FontWeight="Bold" Margin="0,12,0,6" />
+
+            <TextBox Text="^Correlation-Id$" Style="{StaticResource SelectablePatternStyle}" />
+            <TextBlock Text="matches only the header named exactly &quot;Correlation-Id&quot;"
+                       TextWrapping="Wrap" Margin="0,0,0,10" />
+
+            <TextBox Text="^X-.*-Id$" Style="{StaticResource SelectablePatternStyle}" />
+            <TextBlock Text="matches any header starting with X- and ending with -Id"
+                       TextWrapping="Wrap" Margin="0,0,0,2" />
+            <TextBlock Text="Note: a column shows only the first matching header; if several headers match, the rest are ignored."
+                       FontStyle="Italic" TextWrapping="Wrap" Margin="0,0,0,10" />
+
+            <TextBox Text="^Bearer (.+)$" Style="{StaticResource SelectablePatternStyle}" />
+            <TextBlock Text="value pattern capturing the token after &quot;Bearer &quot;"
+                       TextWrapping="Wrap" Margin="0,0,0,10" />
+        </StackPanel>
+    </ScrollViewer>
+</Window>

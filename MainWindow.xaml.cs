@@ -12,8 +12,10 @@ using System.Windows.Controls;
 using System.Windows.Data;
 using System.Windows.Documents;
 using System.Windows.Input;
+using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
+using System.Windows.Threading;
 using System.Xml.Linq;
 using HttpTraceAnalyser.Model;
 using ICSharpCode.AvalonEdit.Highlighting;
@@ -40,6 +42,7 @@ namespace HttpTraceAnalyser
         private IReadOnlyList<KeyValuePair<string, string>>? _responseHeaders;
 
         private enum PayloadFormat { PlainText = 0, Json = 1, Xml = 2, Html = 3, JavaScript = 4, Image = 5, Svg = 6 }
+        private enum FindScope { AllSessions = 0, RequestHeaders = 1, RequestBody = 2, ResponseHeaders = 3, ResponseBody = 4 }
 
         // Word-wrap state for the RichTextBox viewers (Summary, Mapi). RichTextBox has
         // no built-in wrap toggle; we simulate it by pinning Document.PageWidth. State
@@ -59,6 +62,9 @@ namespace HttpTraceAnalyser
         private GridViewColumn? _sortColumn;
         private ListSortDirection? _sortDirection;
         private readonly Dictionary<GridViewColumn, string> _originalHeaders = new();
+        private readonly Dictionary<string, GridViewColumn> _userDefinedGridColumns =
+            new(StringComparer.OrdinalIgnoreCase);
+        private readonly List<MenuItem> _userDefinedColumnMenuItems = new();
 
         private const string AscendingArrow = " \u25B2";  // ▲
         private const string DescendingArrow = " \u25BC"; // ▼
@@ -80,13 +86,53 @@ namespace HttpTraceAnalyser
         // Track if we're populating viewers to suppress format change events
         private bool _isPopulatingViewers;
 
+        private bool _isSplitView;
+        private GridLength _sessionsLeftWidth = new(900);
+        private GridLength _sessionsTopHeight = new(2, GridUnitType.Star);
+
+        private FrameworkElement[] _middleMouseScrollTargets = [];
+        private FrameworkElement? _middleMouseScrollTarget;
+        private ScrollViewer? _middleMouseScrollViewer;
+        private DispatcherTimer? _middleMouseScrollTimer;
+        private bool _middleMouseAutoScrollActive;
+        private Point _middleMouseScrollAnchor;
+        private Point _middleMouseScrollPosition;
+        private Cursor? _previousOverrideCursor;
+        private HwndSource? _windowSource;
+        private const int WmMouseHorizontalWheel = 0x020E;
+
         public MainWindow()
         {
             InitializeComponent();
 
+            _middleMouseScrollTargets =
+            [
+                RequestList,
+                RequestHeadersText,
+                RequestPayloadEditor,
+                RequestPayloadImageScroll,
+                RequestPayloadSvgScroll,
+                ResponseHeadersText,
+                ResponsePayloadEditor,
+                ResponsePayloadImageScroll,
+                ResponsePayloadSvgScroll,
+            ];
+            foreach (var target in _middleMouseScrollTargets)
+            {
+                target.AddHandler(Mouse.PreviewMouseDownEvent,
+                    new MouseButtonEventHandler(ScrollableViewer_PreviewMouseDown), handledEventsToo: true);
+                target.AddHandler(Mouse.PreviewMouseMoveEvent,
+                    new MouseEventHandler(ScrollableViewer_PreviewMouseMove), handledEventsToo: true);
+                target.AddHandler(Mouse.LostMouseCaptureEvent,
+                    new MouseEventHandler(ScrollableViewer_LostMouseCapture), handledEventsToo: true);
+            }
+            AddHandler(Keyboard.PreviewKeyDownEvent,
+                new KeyEventHandler(ScrollableViewer_PreviewKeyDown), handledEventsToo: true);
+
             // Add grid columns + column-chooser entries for any fields contributed by
             // plugins loaded during App.OnStartup (see Model/Extensibility/PluginManager).
             AddExtendedFieldColumns();
+            RebuildUserDefinedGridColumns();
 
             // Show which extended (plugin) parsers were loaded/failed on the Summary tab
             // as soon as the window opens, before any trace file is loaded.
@@ -97,17 +143,25 @@ namespace HttpTraceAnalyser
             // Disable link detection after controls are loaded to prevent regex performance issues.
             // This is a redundant safety measure in addition to the global handler in App.OnStartup.
             Loaded += (_, _) => DisableLinkDetection();
+            Loaded += async (_, _) =>
+            {
+                if (AppSettings.UseSplitView)
+                    await SetViewLayoutAsync(useSplitView: true);
+            };
+            SourceInitialized += MainWindow_SourceInitialized;
 
             HighlightRuleSet.RulesChanged += OnHighlightRulesChanged;
             FilterRuleSet.FiltersChanged += OnFilterRulesChanged;
-            ActiveFiltersList.ItemsSource = FilterRuleSet.Rules;
-            DarkModeToggle.IsChecked = ThemeManager.Current == AppTheme.Dark;
+            CustomColumnSet.ColumnsChanged += OnCustomColumnsChanged;
             ThemeManager.ThemeChanged += OnThemeChanged;
             Closed += (_, _) =>
             {
                 HighlightRuleSet.RulesChanged -= OnHighlightRulesChanged;
                 FilterRuleSet.FiltersChanged -= OnFilterRulesChanged;
+                CustomColumnSet.ColumnsChanged -= OnCustomColumnsChanged;
                 ThemeManager.ThemeChanged -= OnThemeChanged;
+                StopMiddleMouseAutoScroll();
+                _windowSource?.RemoveHook(WindowMessageHook);
             };
         }
 
@@ -144,11 +198,613 @@ namespace HttpTraceAnalyser
             }
         }
 
-        private void DarkModeToggle_Changed(object sender, RoutedEventArgs e)
+        private void OnThemeChanged(object? sender, EventArgs e)
         {
-            var target = DarkModeToggle.IsChecked == true ? AppTheme.Dark : AppTheme.Light;
-            if (ThemeManager.Current != target)
-                ThemeManager.Apply(target);
+            // Row foreground uses a value converter that resolves the theme's
+            // default brush when the row has no explicit colour, so re-run the
+            // bindings to pick up the new palette.
+            RequestList.Items.Refresh();
+
+            // Reset syntax highlighting definitions to reload with new theme
+            SyntaxHighlightingManager.ResetHighlightings();
+
+            // Reapply syntax highlighting to visible editors
+            ReapplySyntaxHighlighting();
+        }
+
+        private void OnFilterRulesChanged(object? sender, EventArgs e)
+        {
+            ApplyFilter();
+        }
+
+        private void ApplyFilter()
+        {
+            if (_trace is null)
+                return;
+            try
+            {
+                _trace.View.RowFilter = FilterRuleSet.BuildRowFilter();
+            }
+            catch (Exception ex) when (ex is EvaluateException or SyntaxErrorException or InvalidExpressionException)
+            {
+                // Malformed rule; leave previous filter in place.
+            }
+        }
+
+        private void FilterButton_Click(object sender, RoutedEventArgs e)
+        {
+            var window = new FilterWindow { Owner = this };
+            window.ShowDialog();
+        }
+
+        private void FindCommand_Executed(object sender, ExecutedRoutedEventArgs e)
+            => OpenFindForCurrentFocus();
+
+        private async void MainWindow_PreviewKeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.Key == Key.F && Keyboard.Modifiers == ModifierKeys.Control)
+            {
+                OpenFindForCurrentFocus();
+                e.Handled = true;
+            }
+            else if (TryGetFocusedFindScope(out var scope)
+                     && GetLocalFindControls(scope).Bar.Visibility == Visibility.Visible)
+            {
+                if (e.Key == Key.Enter)
+                {
+                    await FindLocalAsync(scope, forward: (Keyboard.Modifiers & ModifierKeys.Shift) == 0);
+                    e.Handled = true;
+                }
+                else if (e.Key == Key.Escape)
+                {
+                    CloseLocalFind(scope);
+                    e.Handled = true;
+                }
+            }
+        }
+
+        private void OpenFindForCurrentFocus()
+        {
+            if (TryGetFocusedFindScope(out var scope))
+            {
+                OpenLocalFind(scope);
+                return;
+            }
+
+            FindSessionsBar.Visibility = Visibility.Visible;
+            FindSessionsText.Focus();
+            FindSessionsText.SelectAll();
+        }
+
+        private bool TryGetFocusedFindScope(out FindScope scope)
+        {
+            if (RequestHeadersPanel.IsKeyboardFocusWithin)
+                scope = FindScope.RequestHeaders;
+            else if (RequestBodyPanel.IsKeyboardFocusWithin)
+                scope = FindScope.RequestBody;
+            else if (ResponseHeadersPanel.IsKeyboardFocusWithin)
+                scope = FindScope.ResponseHeaders;
+            else if (ResponseBodyPanel.IsKeyboardFocusWithin)
+                scope = FindScope.ResponseBody;
+            else
+            {
+                scope = FindScope.AllSessions;
+                return false;
+            }
+
+            return true;
+        }
+
+        private void OpenLocalFind(FindScope scope)
+        {
+            var (bar, searchBox, _) = GetLocalFindControls(scope);
+            bar.Visibility = Visibility.Visible;
+            searchBox.Focus();
+            searchBox.SelectAll();
+        }
+
+        private async void LocalFindNextButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (TryGetFindScope(sender, out var scope))
+                await FindLocalAsync(scope, forward: true);
+        }
+
+        private async void LocalFindPreviousButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (TryGetFindScope(sender, out var scope))
+                await FindLocalAsync(scope, forward: false);
+        }
+
+        private void LocalFindCloseButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (TryGetFindScope(sender, out var scope))
+                CloseLocalFind(scope);
+        }
+
+        private async void LocalFindText_KeyDown(object sender, KeyEventArgs e)
+        {
+            if (!TryGetFindScope(sender, out var scope))
+                return;
+
+            if (e.Key == Key.Escape)
+            {
+                CloseLocalFind(scope);
+                e.Handled = true;
+            }
+            else if (e.Key == Key.Enter)
+            {
+                await FindLocalAsync(scope, forward: (Keyboard.Modifiers & ModifierKeys.Shift) == 0);
+                e.Handled = true;
+            }
+        }
+
+        private void LocalFindText_TextChanged(object sender, TextChangedEventArgs e)
+        {
+            if (TryGetFindScope(sender, out var scope))
+                GetLocalFindControls(scope).Status.Text = string.Empty;
+        }
+
+        private async Task FindLocalAsync(FindScope scope, bool forward)
+        {
+            var (_, searchBox, status) = GetLocalFindControls(scope);
+            var searchText = searchBox.Text;
+            if (string.IsNullOrWhiteSpace(searchText))
+            {
+                status.Text = string.Empty;
+                return;
+            }
+
+            switch (scope)
+            {
+                case FindScope.RequestHeaders:
+                    SelectTextMatch(RequestHeadersText, searchText, forward, status);
+                    break;
+                case FindScope.RequestBody:
+                    await PreparePayloadForSearchAsync(request: true);
+                    SelectTextMatch(RequestPayloadEditor, searchText, forward, status);
+                    break;
+                case FindScope.ResponseHeaders:
+                    SelectTextMatch(ResponseHeadersText, searchText, forward, status);
+                    break;
+                case FindScope.ResponseBody:
+                    await PreparePayloadForSearchAsync(request: false);
+                    SelectTextMatch(ResponsePayloadEditor, searchText, forward, status);
+                    break;
+            }
+
+            if (status.Text == "Match found")
+                FocusFindTarget(scope);
+            else
+                searchBox.Focus();
+        }
+
+        private void CloseLocalFind(FindScope scope)
+        {
+            var (bar, _, status) = GetLocalFindControls(scope);
+            bar.Visibility = Visibility.Collapsed;
+            status.Text = string.Empty;
+            FocusFindTarget(scope);
+        }
+
+        private (Border Bar, TextBox SearchBox, TextBlock Status) GetLocalFindControls(FindScope scope)
+            => scope switch
+            {
+                FindScope.RequestHeaders => (RequestHeadersFindBar, RequestHeadersFindText, RequestHeadersFindStatus),
+                FindScope.RequestBody => (RequestBodyFindBar, RequestBodyFindText, RequestBodyFindStatus),
+                FindScope.ResponseHeaders => (ResponseHeadersFindBar, ResponseHeadersFindText, ResponseHeadersFindStatus),
+                FindScope.ResponseBody => (ResponseBodyFindBar, ResponseBodyFindText, ResponseBodyFindStatus),
+                _ => throw new ArgumentOutOfRangeException(nameof(scope)),
+            };
+
+        private static bool TryGetFindScope(object sender, out FindScope scope)
+            => Enum.TryParse((sender as FrameworkElement)?.Tag as string, out scope)
+               && scope != FindScope.AllSessions;
+
+        private void FocusFindTarget(FindScope scope)
+        {
+            if (scope == FindScope.RequestHeaders)
+                RequestHeadersText.Focus();
+            else if (scope == FindScope.RequestBody)
+                RequestPayloadEditor.Focus();
+            else if (scope == FindScope.ResponseHeaders)
+                ResponseHeadersText.Focus();
+            else if (scope == FindScope.ResponseBody)
+                ResponsePayloadEditor.Focus();
+        }
+
+        private async void FindNextButton_Click(object sender, RoutedEventArgs e)
+            => await FindAsync(forward: true);
+
+        private async void FindPreviousButton_Click(object sender, RoutedEventArgs e)
+            => await FindAsync(forward: false);
+
+        private void CloseFindButton_Click(object sender, RoutedEventArgs e)
+            => CloseFindSessionsBar();
+
+        private void FindSessionsText_TextChanged(object sender, TextChangedEventArgs e)
+        {
+            FindSessionsStatus.Text = string.Empty;
+        }
+
+        private void FindScopeCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (FindSessionsStatus is not null)
+                FindSessionsStatus.Text = string.Empty;
+        }
+
+        private async void FindSessionsText_KeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.Key == Key.Escape)
+            {
+                CloseFindSessionsBar();
+                e.Handled = true;
+            }
+            else if (e.Key == Key.Enter)
+            {
+                await FindAsync(forward: (Keyboard.Modifiers & ModifierKeys.Shift) == 0);
+                e.Handled = true;
+            }
+        }
+
+        private void CloseFindSessionsBar()
+        {
+            FindSessionsBar.Visibility = Visibility.Collapsed;
+            FindSessionsStatus.Text = string.Empty;
+            RequestList.Focus();
+        }
+
+        private async Task FindAsync(bool forward)
+        {
+            var scope = (FindScope)FindScopeCombo.SelectedIndex;
+            if (scope == FindScope.AllSessions)
+            {
+                FindSession(forward);
+                return;
+            }
+
+            await FindInSelectedSessionAsync(scope, forward);
+            FindSessionsText.Focus();
+        }
+
+        private void FindSession(bool forward)
+        {
+            var searchText = FindSessionsText.Text;
+            var count = RequestList.Items.Count;
+            if (string.IsNullOrWhiteSpace(searchText) || count == 0)
+            {
+                FindSessionsStatus.Text = count == 0 ? "No sessions" : string.Empty;
+                return;
+            }
+
+            var step = forward ? 1 : -1;
+            var selectedIndex = RequestList.SelectedIndex;
+            var startIndex = selectedIndex < 0
+                ? (forward ? 0 : count - 1)
+                : ((selectedIndex + step) % count + count) % count;
+
+            for (var offset = 0; offset < count; offset++)
+            {
+                var index = ((startIndex + step * offset) % count + count) % count;
+                if (RequestList.Items[index] is DataRowView row && RowContainsText(row.Row, searchText))
+                {
+                    RequestList.SelectedItems.Clear();
+                    RequestList.SelectedIndex = index;
+                    RequestList.ScrollIntoView(RequestList.Items[index]);
+                    FindSessionsStatus.Text = $"Session {index + 1} of {count}";
+                    return;
+                }
+            }
+
+            FindSessionsStatus.Text = "No matches";
+        }
+
+        private async Task FindInSelectedSessionAsync(FindScope scope, bool forward)
+        {
+            if (RequestList.SelectedItem is not DataRowView)
+            {
+                FindSessionsStatus.Text = "Select a session";
+                return;
+            }
+
+            var searchText = FindSessionsText.Text;
+            if (string.IsNullOrWhiteSpace(searchText))
+            {
+                FindSessionsStatus.Text = string.Empty;
+                return;
+            }
+
+            switch (scope)
+            {
+                case FindScope.RequestHeaders:
+                    MainTabControl.SelectedIndex = 1;
+                    SelectTextMatch(RequestHeadersText, searchText, forward, FindSessionsStatus);
+                    break;
+                case FindScope.RequestBody:
+                    await PreparePayloadForSearchAsync(request: true);
+                    SelectTextMatch(RequestPayloadEditor, searchText, forward, FindSessionsStatus);
+                    break;
+                case FindScope.ResponseHeaders:
+                    MainTabControl.SelectedIndex = 2;
+                    SelectTextMatch(ResponseHeadersText, searchText, forward, FindSessionsStatus);
+                    break;
+                case FindScope.ResponseBody:
+                    await PreparePayloadForSearchAsync(request: false);
+                    SelectTextMatch(ResponsePayloadEditor, searchText, forward, FindSessionsStatus);
+                    break;
+            }
+        }
+
+        private async Task PreparePayloadForSearchAsync(bool request)
+        {
+            var payload = request ? _requestPayload : _responsePayload;
+            if (payload is not { Length: > 0 })
+                return;
+
+            var editor = request ? RequestPayloadEditor : ResponsePayloadEditor;
+            var formatCombo = request ? RequestPayloadFormatCombo : ResponsePayloadFormatCombo;
+            var format = (PayloadFormat)formatCombo.SelectedIndex;
+            if (format is PayloadFormat.Image or PayloadFormat.Svg)
+            {
+                format = PayloadFormat.PlainText;
+                _isPopulatingViewers = true;
+                try
+                {
+                    formatCombo.SelectedIndex = (int)format;
+                }
+                finally
+                {
+                    _isPopulatingViewers = false;
+                }
+            }
+
+            if (request)
+            {
+                RequestViewerGrid.Visibility = Visibility.Visible;
+                _requestTabEverActivated = true;
+                MainTabControl.SelectedIndex = 1;
+                if (_requestPayloadNeedsRender || string.IsNullOrEmpty(editor.Text))
+                {
+                    _requestPayloadNeedsRender = false;
+                    await RenderRequestPayload(format);
+                }
+            }
+            else
+            {
+                ResponseViewerGrid.Visibility = Visibility.Visible;
+                _responseTabEverActivated = true;
+                MainTabControl.SelectedIndex = 2;
+                if (_responsePayloadNeedsRender || string.IsNullOrEmpty(editor.Text))
+                {
+                    _responsePayloadNeedsRender = false;
+                    await RenderResponsePayload(format);
+                }
+            }
+        }
+
+        private static void SelectTextMatch(TextBox textBox, string searchText, bool forward, TextBlock status)
+        {
+            var index = FindTextIndex(textBox.Text, searchText, textBox.SelectionStart, textBox.SelectionLength, forward);
+            if (index < 0)
+            {
+                status.Text = "No matches";
+                return;
+            }
+
+            textBox.Focus();
+            textBox.Select(index, searchText.Length);
+            CenterTextMatch(textBox, index, searchText.Length);
+            status.Text = "Match found";
+        }
+
+        private static void SelectTextMatch(ICSharpCode.AvalonEdit.TextEditor editor, string searchText, bool forward, TextBlock status)
+        {
+            var index = FindTextIndex(editor.Text, searchText, editor.SelectionStart, editor.SelectionLength, forward);
+            if (index < 0)
+            {
+                status.Text = "No matches";
+                return;
+            }
+
+            editor.Focus();
+            editor.Select(index, searchText.Length);
+            CenterTextMatch(editor, index, searchText.Length);
+            status.Text = "Match found";
+        }
+
+        private static void CenterTextMatch(TextBox textBox, int index, int length)
+        {
+            textBox.ScrollToLine(textBox.GetLineIndexFromCharacterIndex(index));
+            textBox.UpdateLayout();
+
+            var start = textBox.GetRectFromCharacterIndex(index);
+            if (start.IsEmpty)
+                return;
+
+            var endIndex = Math.Min(index + length, textBox.Text.Length);
+            var end = textBox.GetRectFromCharacterIndex(endIndex);
+            var centerX = !end.IsEmpty && Math.Abs(end.Y - start.Y) < start.Height
+                ? (start.X + end.X) / 2
+                : start.X;
+            var centerY = start.Y + start.Height / 2;
+
+            textBox.ScrollToHorizontalOffset(Math.Max(0,
+                textBox.HorizontalOffset + centerX - textBox.ViewportWidth / 2));
+            textBox.ScrollToVerticalOffset(Math.Max(0,
+                textBox.VerticalOffset + centerY - textBox.ViewportHeight / 2));
+        }
+
+        private static void CenterTextMatch(ICSharpCode.AvalonEdit.TextEditor editor, int index, int length)
+        {
+            var startLocation = editor.Document.GetLocation(index);
+            editor.ScrollTo(startLocation.Line, startLocation.Column);
+            editor.UpdateLayout();
+
+            var textView = editor.TextArea.TextView;
+            var scrollInfo = (System.Windows.Controls.Primitives.IScrollInfo)textView;
+            var start = textView.GetVisualPosition(
+                new ICSharpCode.AvalonEdit.TextViewPosition(startLocation),
+                VisualYPosition.LineMiddle);
+            var endLocation = editor.Document.GetLocation(Math.Min(index + length, editor.Document.TextLength));
+            var end = textView.GetVisualPosition(
+                new ICSharpCode.AvalonEdit.TextViewPosition(endLocation),
+                VisualYPosition.LineMiddle);
+            var centerX = endLocation.Line == startLocation.Line
+                ? (start.X + end.X) / 2
+                : start.X;
+
+            scrollInfo.SetHorizontalOffset(Math.Max(0,
+                scrollInfo.HorizontalOffset + centerX - scrollInfo.ViewportWidth / 2));
+            scrollInfo.SetVerticalOffset(Math.Max(0,
+                scrollInfo.VerticalOffset + start.Y - scrollInfo.ViewportHeight / 2));
+        }
+
+        private static int FindTextIndex(string text, string searchText, int selectionStart, int selectionLength, bool forward)
+        {
+            if (string.IsNullOrEmpty(text))
+                return -1;
+
+            if (forward)
+            {
+                var start = Math.Min(selectionStart + selectionLength, text.Length);
+                var index = text.IndexOf(searchText, start, StringComparison.OrdinalIgnoreCase);
+                return index >= 0 || start == 0
+                    ? index
+                    : text.IndexOf(searchText, 0, StringComparison.OrdinalIgnoreCase);
+            }
+
+            var previousStart = Math.Min(selectionStart - 1, text.Length - 1);
+            var previous = previousStart >= 0
+                ? text.LastIndexOf(searchText, previousStart, StringComparison.OrdinalIgnoreCase)
+                : -1;
+            return previous >= 0
+                ? previous
+                : text.LastIndexOf(searchText, StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static bool RowContainsText(DataRow row, string searchText)
+        {
+            foreach (DataColumn column in row.Table.Columns)
+            {
+                if (column.ColumnName is TraceDataSchema.RowBackground or TraceDataSchema.RowForeground)
+                    continue;
+
+                var value = row[column];
+                if (value is byte[] payload)
+                {
+                    if (payload.Length > 0 && Encoding.UTF8.GetString(payload)
+                        .Contains(searchText, StringComparison.OrdinalIgnoreCase))
+                        return true;
+                }
+                else if (value is not DBNull && Convert.ToString(value)?.Contains(
+                    searchText, StringComparison.OrdinalIgnoreCase) == true)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private void OnHighlightRulesChanged(object? sender, EventArgs e)
+        {
+            _trace?.RecomputeHighlights();
+            // The Brush columns changed in-place; nudge the view to redraw.
+            RequestList.Items.Refresh();
+        }
+
+        private void HighlightsButton_Click(object sender, RoutedEventArgs e)
+        {
+            var window = new HighlightsWindow { Owner = this };
+            window.ShowDialog();
+        }
+
+        private void CustomColumnsButton_Click(object sender, RoutedEventArgs e)
+        {
+            var window = new CustomColumnsWindow { Owner = this };
+            window.ShowDialog();
+        }
+
+        private void OnCustomColumnsChanged(object? sender, EventArgs e)
+        {
+            foreach (var rule in FilterRuleSet.Rules
+                .Where(rule => !TraceColumnCatalog.Names.Contains(
+                    rule.ColumnName,
+                    StringComparer.OrdinalIgnoreCase))
+                .ToArray())
+            {
+                FilterRuleSet.Rules.Remove(rule);
+            }
+
+            foreach (var rule in HighlightRuleSet.Rules
+                .Where(rule => !TraceColumnCatalog.Names.Contains(
+                    rule.ColumnName,
+                    StringComparer.OrdinalIgnoreCase))
+                .ToArray())
+            {
+                HighlightRuleSet.Rules.Remove(rule);
+            }
+
+            _trace?.RefreshUserDefinedColumns();
+            RebuildUserDefinedGridColumns();
+            ApplyFilter();
+            RequestList.Items.Refresh();
+        }
+
+        private async void AppSettingsButton_Click(object sender, RoutedEventArgs e)
+        {
+            var window = new AppSettingsWindow(_isSplitView) { Owner = this };
+            if (window.ShowDialog() != true)
+                return;
+
+            AppSettingsButton.IsEnabled = false;
+            try
+            {
+                var theme = window.SelectedThemePreference switch
+                {
+                    ThemePreference.Light => AppTheme.Light,
+                    ThemePreference.Dark => AppTheme.Dark,
+                    _ => ThemeManager.GetSystemTheme(),
+                };
+                if (ThemeManager.Current != theme)
+                    ThemeManager.Apply(theme);
+
+                await SetViewLayoutAsync(window.UseSplitView);
+                await ApplyMcpSettingsAsync(window.HostMcpServer, window.McpPort);
+
+                McpServerButton.Checked -= McpServerButton_Checked;
+                McpServerButton.Unchecked -= McpServerButton_Unchecked;
+                McpServerButton.IsChecked = McpHostManager.IsRunning;
+                McpServerButton.Content = McpHostManager.IsRunning ? "Disable" : "Enable";
+                McpServerButton.Tag = McpHostManager.IsRunning ? "\uE8CE" : "\uE8CD";
+                McpServerButton.Checked += McpServerButton_Checked;
+                McpServerButton.Unchecked += McpServerButton_Unchecked;
+
+                AppSettings.ThemePreference = window.SelectedThemePreference;
+                AppSettings.UseSplitView = window.UseSplitView;
+                AppSettings.McpPort = window.McpPort;
+                AppSettings.Save();
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(this, $"Failed to apply app settings:\n{ex.Message}",
+                    "App Settings", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+            finally
+            {
+                AppSettingsButton.IsEnabled = true;
+            }
+        }
+
+        private static async Task ApplyMcpSettingsAsync(bool shouldRun, int port)
+        {
+            bool portChanged = McpHostManager.Port != port;
+            if (McpHostManager.IsRunning && (!shouldRun || portChanged))
+                await McpHostManager.StopAsync();
+
+            McpHostManager.Port = port;
+
+            if (shouldRun && !McpHostManager.IsRunning)
+                await McpHostManager.StartAsync();
         }
 
         private async void McpServerButton_Checked(object sender, RoutedEventArgs e)
@@ -192,81 +848,101 @@ namespace HttpTraceAnalyser
             }
         }
 
-        private void OnThemeChanged(object? sender, EventArgs e)
+        private async Task SetViewLayoutAsync(bool useSplitView)
         {
-            DarkModeToggle.IsChecked = ThemeManager.Current == AppTheme.Dark;
-            // Row foreground uses a value converter that resolves the theme's
-            // default brush when the row has no explicit colour, so re-run the
-            // bindings to pick up the new palette.
-            RequestList.Items.Refresh();
-
-            // Reset syntax highlighting definitions to reload with new theme
-            SyntaxHighlightingManager.ResetHighlightings();
-
-            // Reapply syntax highlighting to visible editors
-            ReapplySyntaxHighlighting();
-        }
-
-        private void OnFilterRulesChanged(object? sender, EventArgs e)
-        {
-            ApplyFilter();
-        }
-
-        private void ApplyFilter()
-        {
-            if (_trace is null)
+            if (_isSplitView == useSplitView)
                 return;
-            try
+
+            if (useSplitView)
             {
-                _trace.View.RowFilter = FilterRuleSet.BuildRowFilter();
+                _sessionsLeftWidth = SessionsColumn.Width;
+
+                RequestTab.Content = null;
+                ResponseTab.Content = null;
+                SplitRequestHost.Content = RequestViewerGrid;
+                SplitResponseHost.Content = ResponseViewerGrid;
+                MoveTabContent(SummaryTab, TopSummaryTab);
+                MoveTabContent(RestTab, TopRestTab);
+                MoveTabContent(SoapTab, TopSoapTab);
+                MoveTabContent(MapiTab, TopMapiTab);
+
+                SessionsColumn.MinWidth = 0;
+                SessionsColumn.Width = new GridLength(1, GridUnitType.Star);
+                VerticalSplitterColumn.Width = new GridLength(0);
+                TabbedDetailsColumn.MinWidth = 0;
+                TabbedDetailsColumn.Width = new GridLength(0);
+
+                SessionsPane.SetValue(Grid.ColumnSpanProperty, 3);
+                SessionsRow.Height = _sessionsTopHeight;
+                HorizontalSplitterRow.Height = new GridLength(4);
+                SplitDetailsRow.Height = new GridLength(3, GridUnitType.Star);
+
+                VerticalWorkspaceSplitter.Visibility = Visibility.Collapsed;
+                MainTabControl.Visibility = Visibility.Collapsed;
+                HorizontalWorkspaceSplitter.Visibility = Visibility.Visible;
+                TopLayoutTabControl.Visibility = Visibility.Visible;
+                RequestViewerGrid.Visibility = Visibility.Visible;
+                ResponseViewerGrid.Visibility = Visibility.Visible;
+                _requestTabEverActivated = true;
+                _responseTabEverActivated = true;
+                _isSplitView = true;
+
+                await Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.Render);
+                AutoSizeGridViewColumns();
+                await RenderVisibleSplitPayloads();
             }
-            catch (Exception ex) when (ex is EvaluateException or SyntaxErrorException or InvalidExpressionException)
+            else
             {
-                // Malformed rule; leave previous filter in place.
+                _sessionsTopHeight = SessionsRow.Height;
+
+                SplitRequestHost.Content = null;
+                SplitResponseHost.Content = null;
+                RequestTab.Content = RequestViewerGrid;
+                ResponseTab.Content = ResponseViewerGrid;
+                MoveTabContent(TopSummaryTab, SummaryTab);
+                MoveTabContent(TopRestTab, RestTab);
+                MoveTabContent(TopSoapTab, SoapTab);
+                MoveTabContent(TopMapiTab, MapiTab);
+
+                SessionsPane.ClearValue(Grid.ColumnSpanProperty);
+                SessionsColumn.MinWidth = 400;
+                SessionsColumn.Width = _sessionsLeftWidth;
+                VerticalSplitterColumn.Width = GridLength.Auto;
+                TabbedDetailsColumn.MinWidth = 300;
+                TabbedDetailsColumn.Width = new GridLength(1, GridUnitType.Star);
+
+                SessionsRow.Height = new GridLength(1, GridUnitType.Star);
+                HorizontalSplitterRow.Height = new GridLength(0);
+                SplitDetailsRow.Height = new GridLength(0);
+
+                TopLayoutTabControl.Visibility = Visibility.Collapsed;
+                HorizontalWorkspaceSplitter.Visibility = Visibility.Collapsed;
+                VerticalWorkspaceSplitter.Visibility = Visibility.Visible;
+                MainTabControl.Visibility = Visibility.Visible;
+                _isSplitView = false;
             }
         }
 
-        private void AddRule_Click(object sender, RoutedEventArgs e)
+        private static void MoveTabContent(TabItem source, TabItem destination)
         {
-            var rule = new FilterRule
+            var content = source.Content;
+            source.Content = null;
+            destination.Content = content;
+        }
+
+        private async Task RenderVisibleSplitPayloads()
+        {
+            if (_requestPayloadNeedsRender)
             {
-                Combinator = (FilterCombinator)(RuleCombinatorCombo.SelectedItem ?? FilterCombinator.And),
-                Field = (FilterField)(RuleFieldCombo.SelectedItem ?? FilterField.Response),
-                Comparator = (FilterComparator)(RuleComparatorCombo.SelectedItem ?? FilterComparator.Equals),
-                Value = RuleValueText.Text ?? string.Empty,
-            };
-            FilterRuleSet.Rules.Add(rule);
-            RuleValueText.Clear();
-        }
+                _requestPayloadNeedsRender = false;
+                await RenderRequestPayload(_pendingRequestFormat, showBusyIndicator: true);
+            }
 
-        private void RemoveRule_Click(object sender, RoutedEventArgs e)
-        {
-            if (sender is FrameworkElement fe && fe.Tag is FilterRule rule)
-                FilterRuleSet.Rules.Remove(rule);
-        }
-
-        private void ClearRules_Click(object sender, RoutedEventArgs e)
-        {
-            FilterRuleSet.Rules.Clear();
-        }
-
-        private void OnHighlightRulesChanged(object? sender, EventArgs e)
-        {
-            _trace?.RecomputeHighlights();
-            // The Brush columns changed in-place; nudge the view to redraw.
-            RequestList.Items.Refresh();
-        }
-
-        private void HighlightsButton_Click(object sender, RoutedEventArgs e)
-        {
-            var window = new HighlightsWindow { Owner = this };
-            window.ShowDialog();
-        }
-
-        private void McpSettingsButton_Click(object sender, RoutedEventArgs e)
-        {
-            var window = new McpSettingsWindow { Owner = this };
-            window.ShowDialog();
+            if (_responsePayloadNeedsRender)
+            {
+                _responsePayloadNeedsRender = false;
+                await RenderResponsePayload(_pendingResponseFormat, showBusyIndicator: true);
+            }
         }
 
         /// <summary>
@@ -371,6 +1047,156 @@ namespace HttpTraceAnalyser
             }
         }
 
+        private void ScrollableViewer_PreviewMouseDown(object sender, MouseButtonEventArgs e)
+        {
+            if (_middleMouseAutoScrollActive)
+            {
+                StopMiddleMouseAutoScroll();
+                if (e.ChangedButton == MouseButton.Middle)
+                    e.Handled = true;
+                return;
+            }
+
+            if (e.ChangedButton != MouseButton.Middle)
+                return;
+
+            if (sender is not FrameworkElement target)
+                return;
+
+            var scrollViewer = GetScrollViewer(target);
+            if (scrollViewer is null)
+                return;
+
+            _middleMouseScrollTarget = target;
+            _middleMouseScrollViewer = scrollViewer;
+            _middleMouseScrollAnchor = e.GetPosition(target);
+            _middleMouseScrollPosition = _middleMouseScrollAnchor;
+            _previousOverrideCursor = Mouse.OverrideCursor;
+            Mouse.OverrideCursor = Cursors.ScrollAll;
+            _middleMouseAutoScrollActive = true;
+
+            _middleMouseScrollTimer ??= new DispatcherTimer(
+                TimeSpan.FromMilliseconds(16),
+                DispatcherPriority.Input,
+                MiddleMouseScrollTimer_Tick,
+                Dispatcher);
+            _middleMouseScrollTimer.Start();
+            Mouse.Capture(target, CaptureMode.SubTree);
+            e.Handled = true;
+        }
+
+        private void ScrollableViewer_PreviewMouseMove(object sender, MouseEventArgs e)
+        {
+            if (_middleMouseAutoScrollActive && _middleMouseScrollTarget is not null)
+                _middleMouseScrollPosition = e.GetPosition(_middleMouseScrollTarget);
+        }
+
+        private void ScrollableViewer_LostMouseCapture(object sender, MouseEventArgs e)
+        {
+            if (_middleMouseAutoScrollActive)
+                StopMiddleMouseAutoScroll();
+        }
+
+        private void ScrollableViewer_PreviewKeyDown(object sender, KeyEventArgs e)
+        {
+            if (_middleMouseAutoScrollActive && e.Key == Key.Escape)
+            {
+                StopMiddleMouseAutoScroll();
+                e.Handled = true;
+            }
+        }
+
+        private void MiddleMouseScrollTimer_Tick(object? sender, EventArgs e)
+        {
+            if (_middleMouseScrollViewer is null)
+                return;
+
+            var horizontalDelta = GetAutoScrollDelta(_middleMouseScrollPosition.X - _middleMouseScrollAnchor.X);
+            var verticalDelta = GetAutoScrollDelta(_middleMouseScrollPosition.Y - _middleMouseScrollAnchor.Y);
+
+            if (horizontalDelta != 0)
+                _middleMouseScrollViewer.ScrollToHorizontalOffset(_middleMouseScrollViewer.HorizontalOffset + horizontalDelta);
+            if (verticalDelta != 0)
+                _middleMouseScrollViewer.ScrollToVerticalOffset(_middleMouseScrollViewer.VerticalOffset + verticalDelta);
+        }
+
+        private static double GetAutoScrollDelta(double distance)
+        {
+            const double DeadZone = 12;
+            const double SpeedFactor = 0.15;
+            const double MaximumDelta = 48;
+
+            var magnitude = Math.Abs(distance);
+            if (magnitude <= DeadZone)
+                return 0;
+
+            return Math.Sign(distance) * Math.Min(MaximumDelta, (magnitude - DeadZone) * SpeedFactor);
+        }
+
+        private void MainWindow_SourceInitialized(object? sender, EventArgs e)
+        {
+            _windowSource = PresentationSource.FromVisual(this) as HwndSource;
+            _windowSource?.AddHook(WindowMessageHook);
+        }
+
+        private IntPtr WindowMessageHook(IntPtr hwnd, int message, IntPtr wParam, IntPtr lParam, ref bool handled)
+        {
+            if (message != WmMouseHorizontalWheel)
+                return IntPtr.Zero;
+
+            var hoveredTarget = _middleMouseScrollTargets.FirstOrDefault(target => target.IsVisible && target.IsMouseOver);
+            if (hoveredTarget is null)
+                return IntPtr.Zero;
+
+            var scrollViewer = GetScrollViewer(hoveredTarget);
+            if (scrollViewer is null)
+                return IntPtr.Zero;
+
+            int wheelDelta = (short)((wParam.ToInt64() >> 16) & 0xffff);
+            bool canScroll = wheelDelta > 0
+                ? scrollViewer.HorizontalOffset < scrollViewer.ScrollableWidth
+                : scrollViewer.HorizontalOffset > 0;
+            if (!canScroll)
+                return IntPtr.Zero;
+
+            const double PixelsPerWheelDetent = 48;
+            scrollViewer.ScrollToHorizontalOffset(
+                scrollViewer.HorizontalOffset + wheelDelta / 120.0 * PixelsPerWheelDetent);
+            handled = true;
+            return IntPtr.Zero;
+        }
+
+        private void StopMiddleMouseAutoScroll()
+        {
+            _middleMouseAutoScrollActive = false;
+            _middleMouseScrollTimer?.Stop();
+            Mouse.OverrideCursor = _previousOverrideCursor;
+            _previousOverrideCursor = null;
+            if (Mouse.Captured == _middleMouseScrollTarget)
+                Mouse.Capture(null);
+            _middleMouseScrollTarget = null;
+            _middleMouseScrollViewer = null;
+        }
+
+        private static ScrollViewer? GetScrollViewer(FrameworkElement target)
+            => target as ScrollViewer ?? FindVisualChild<ScrollViewer>(target);
+
+        private static T? FindVisualChild<T>(DependencyObject parent) where T : DependencyObject
+        {
+            for (int i = 0; i < VisualTreeHelper.GetChildrenCount(parent); i++)
+            {
+                var child = VisualTreeHelper.GetChild(parent, i);
+                if (child is T match)
+                    return match;
+
+                var descendant = FindVisualChild<T>(child);
+                if (descendant is not null)
+                    return descendant;
+            }
+
+            return null;
+        }
+
         private void RequestList_HeaderClick(object sender, RoutedEventArgs e)
         {
             if (_trace is null)
@@ -451,12 +1277,62 @@ namespace HttpTraceAnalyser
 
         private readonly Dictionary<GridViewColumn, double> _savedColumnWidths = new();
 
+        private (DataRowView Row, string FieldName, string Value)? _contextCell;
+
+        private void RequestList_PreviewMouseRightButtonDown(object sender, MouseButtonEventArgs e)
+        {
+            _contextCell = null;
+
+            var source = e.OriginalSource as DependencyObject;
+            var item = FindVisualAncestor<ListViewItem>(source);
+            var presenter = FindVisualAncestor<GridViewRowPresenter>(source);
+            if (item?.DataContext is not DataRowView row || presenter is null || RequestList.View is not GridView gridView)
+                return;
+
+            if (!item.IsSelected)
+            {
+                RequestList.SelectedItems.Clear();
+                item.IsSelected = true;
+            }
+            item.Focus();
+
+            double x = e.GetPosition(presenter).X;
+            double rightEdge = 0;
+            foreach (var column in gridView.Columns)
+            {
+                rightEdge += column.ActualWidth;
+                if (x > rightEdge)
+                    continue;
+
+                var fieldName = GetSortMemberPath(column);
+                if (string.IsNullOrEmpty(fieldName) || !row.Row.Table.Columns.Contains(fieldName))
+                    return;
+
+                var rawValue = row.Row[fieldName];
+                var value = rawValue is DBNull
+                    ? string.Empty
+                    : Convert.ToString(rawValue, System.Globalization.CultureInfo.InvariantCulture) ?? string.Empty;
+                _contextCell = (row, fieldName, value);
+                return;
+            }
+        }
+
         private void RequestList_ContextMenuOpening(object sender, ContextMenuEventArgs e)
         {
-            var hasRow = RequestList.SelectedItem is DataRowView;
+            var hasRow = _contextCell is not null;
             FilterMenuItem.IsEnabled = hasRow;
+            HighlightMenuItem.IsEnabled = hasRow;
 
-            if (RequestList.SelectedItem is DataRowView drv)
+            if (_contextCell is { } cell)
+            {
+                var displayValue = cell.Value.Length <= 80
+                    ? cell.Value
+                    : cell.Value[..77] + "...";
+                FilterCurrentCellMenuItem.Header = $"Current cell value equals {displayValue}";
+                HighlightCurrentCellMenuItem.Header = $"Current cell value equals {displayValue}";
+            }
+
+            if (_contextCell is { Row: var drv })
             {
                 var host = drv.Row[TraceDataSchema.Host] as string ?? string.Empty;
                 var method = drv.Row[TraceDataSchema.Method] as string ?? string.Empty;
@@ -471,6 +1347,11 @@ namespace HttpTraceAnalyser
                 SetFilterMenuItem(FilterPathMenuItem, "only path", FilterField.Path, FilterComparator.Equals, path);
                 SetFilterMenuItem(ExcludePathMenuItem, "exclude path", FilterField.Path, FilterComparator.NotEquals, path);
             }
+        }
+
+        private void RequestList_ContextMenuClosed(object sender, RoutedEventArgs e)
+        {
+            _contextCell = null;
         }
 
         private static void SetFilterMenuItem(MenuItem item, string headerPrefix, FilterField field, FilterComparator comparator, string value)
@@ -492,6 +1373,47 @@ namespace HttpTraceAnalyser
                 Comparator = comparator,
                 Value = value,
             });
+        }
+
+        private void FilterCurrentCellMenuItem_Click(object sender, RoutedEventArgs e)
+        {
+            if (_contextCell is not { } cell)
+                return;
+
+            FilterRuleSet.Rules.Add(new FilterRule
+            {
+                Combinator = FilterCombinator.And,
+                ColumnName = cell.FieldName,
+                Comparator = FilterComparator.Equals,
+                Value = cell.Value,
+            });
+        }
+
+        private void HighlightCurrentCellMenuItem_Click(object sender, RoutedEventArgs e)
+        {
+            if (_contextCell is not { } cell)
+                return;
+
+            HighlightRuleSet.Rules.Insert(0, new HighlightRule
+            {
+                ColumnName = cell.FieldName,
+                Operator = HighlightOperator.Equals,
+                Value = cell.Value,
+                BackgroundColor = Colors.LightYellow,
+            });
+        }
+
+        private static T? FindVisualAncestor<T>(DependencyObject? source) where T : DependencyObject
+        {
+            while (source is not null)
+            {
+                if (source is T match)
+                    return match;
+                source = source is Visual || source is System.Windows.Media.Media3D.Visual3D
+                    ? VisualTreeHelper.GetParent(source)
+                    : LogicalTreeHelper.GetParent(source);
+            }
+            return null;
         }
 
         private void RemoveItems_Click(object sender, RoutedEventArgs e)
@@ -517,6 +1439,8 @@ namespace HttpTraceAnalyser
         {
             if (sender is not MenuItem item || item.Tag is not GridViewColumn column)
                 return;
+            if (RequestList.View is not GridView gridView)
+                return;
 
             const double DefaultWidth = 200;
 
@@ -526,17 +1450,38 @@ namespace HttpTraceAnalyser
                     ? saved
                     : DefaultWidth;
                 column.Width = width;
+                if (!gridView.Columns.Contains(column))
+                    gridView.Columns.Insert(GetColumnInsertionIndex(gridView, column), column);
             }
             else
             {
                 if (column.Width > 0)
                     _savedColumnWidths[column] = column.Width;
-                column.Width = 0;
+                gridView.Columns.Remove(column);
             }
         }
 
+        private static int GetColumnInsertionIndex(GridView gridView, GridViewColumn targetColumn)
+        {
+            if (gridView.ColumnHeaderContextMenu is not ContextMenu contextMenu)
+                return gridView.Columns.Count;
+
+            int insertionIndex = 0;
+            foreach (var menuItem in contextMenu.Items.OfType<MenuItem>())
+            {
+                if (menuItem.Tag is not GridViewColumn menuColumn)
+                    continue;
+                if (menuColumn == targetColumn)
+                    return insertionIndex;
+                if (gridView.Columns.Contains(menuColumn))
+                    insertionIndex++;
+            }
+
+            return gridView.Columns.Count;
+        }
+
         /// <summary>
-        /// Adds a hidden (Width=0) <see cref="GridViewColumn"/> and matching column-chooser
+        /// Adds a hidden <see cref="GridViewColumn"/> and matching column-chooser
         /// <see cref="MenuItem"/> for every extended field registered by a plugin (see
         /// <see cref="HttpTraceFile.ExtendedFieldNames"/>). Called once from the constructor,
         /// after plugins have already been loaded during App startup.
@@ -559,10 +1504,9 @@ namespace HttpTraceAnalyser
                 var gridColumn = new GridViewColumn
                 {
                     Header = displayName,
-                    Width = 0,
+                    Width = 200,
                     DisplayMemberBinding = new System.Windows.Data.Binding(name),
                 };
-                gridView.Columns.Add(gridColumn);
 
                 if (contextMenu is not null)
                 {
@@ -576,10 +1520,68 @@ namespace HttpTraceAnalyser
                     menuItem.Checked += ColumnVisibility_Changed;
                     menuItem.Unchecked += ColumnVisibility_Changed;
 
-                    // Insert before the trailing "Auto-size Columns" item/separator, if present.
-                    int insertIndex = contextMenu.Items.Count;
+                    int insertIndex = contextMenu.Items.IndexOf(ColumnActionsSeparator);
+                    if (insertIndex < 0)
+                        insertIndex = contextMenu.Items.Count;
                     contextMenu.Items.Insert(insertIndex, menuItem);
                 }
+            }
+        }
+
+        private void RebuildUserDefinedGridColumns()
+        {
+            if (RequestList.View is not GridView gridView)
+                return;
+
+            foreach (var column in _userDefinedGridColumns.Values)
+                gridView.Columns.Remove(column);
+            _userDefinedGridColumns.Clear();
+
+            var contextMenu = gridView.ColumnHeaderContextMenu;
+            if (contextMenu is not null)
+            {
+                foreach (var item in _userDefinedColumnMenuItems)
+                    contextMenu.Items.Remove(item);
+                _userDefinedColumnMenuItems.Clear();
+            }
+
+            foreach (var definition in CustomColumnSet.Columns)
+            {
+                if (string.IsNullOrWhiteSpace(definition.Name) ||
+                    TraceColumnCatalog.IsReservedName(definition.Name) ||
+                    _userDefinedGridColumns.ContainsKey(definition.Name))
+                {
+                    continue;
+                }
+
+                var gridColumn = new GridViewColumn
+                {
+                    Header = definition.Name,
+                    Width = 160,
+                    DisplayMemberBinding = new Binding(definition.Name),
+                };
+                _userDefinedGridColumns[definition.Name] = gridColumn;
+
+                if (contextMenu is not null)
+                {
+                    var menuItem = new MenuItem
+                    {
+                        Header = definition.Name,
+                        IsCheckable = true,
+                        IsChecked = true,
+                        Tag = gridColumn,
+                    };
+                    menuItem.Checked += ColumnVisibility_Changed;
+                    menuItem.Unchecked += ColumnVisibility_Changed;
+
+                    int insertIndex = contextMenu.Items.IndexOf(ColumnActionsSeparator);
+                    if (insertIndex < 0)
+                        insertIndex = contextMenu.Items.Count;
+                    contextMenu.Items.Insert(insertIndex, menuItem);
+                    _userDefinedColumnMenuItems.Add(menuItem);
+                }
+
+                gridView.Columns.Insert(GetColumnInsertionIndex(gridView, gridColumn), gridColumn);
             }
         }
 
@@ -620,45 +1622,75 @@ namespace HttpTraceAnalyser
             // Calculate available width (account for scrollbar, arrow indicator, padding)
             const double ScrollbarWidth = 20;
             const double ArrowIndicatorWidth = 24;
-            const double SafetyMargin = 40;
 
-            double availableWidth = RequestList.ActualWidth - ScrollbarWidth - ArrowIndicatorWidth - SafetyMargin;
+            double availableWidth = RequestList.ActualWidth - ScrollbarWidth - ArrowIndicatorWidth;
 
             // Ensure we have a reasonable available width
             if (availableWidth < 300)
                 availableWidth = 800; // Fallback if ListView hasn't been sized yet
 
-            // Calculate total measured width with per-column max limits
+            // Keep compact fields at their measured width. If the content is wider than
+            // the viewport, distribute space above each header's minimum in proportion to demand.
             const double MinWidth = 50;
-            const double MaxWidth = 300;  // Further reduced to ensure all columns fit
             const double Padding = 8;
 
-            // Apply max width cap to measurements
-            var cappedMeasurements = columnMeasurements
-                .Select(cm => (cm.Column, Width: Math.Min(cm.MeasuredWidth, MaxWidth)))
+            var desiredMeasurements = columnMeasurements
+                .Select(cm =>
+                {
+                    double minimumWidth = Math.Max(MinWidth, MeasureColumnHeaderWidth(cm.Column));
+                    double desiredWidth = Math.Max(minimumWidth, cm.MeasuredWidth + Padding);
+                    return (cm.Column, MinimumWidth: minimumWidth, DesiredWidth: desiredWidth);
+                })
                 .ToList();
 
-            double totalWidth = cappedMeasurements.Sum(cm => cm.Width) + Padding * cappedMeasurements.Count;
+            double totalDesiredWidth = desiredMeasurements.Sum(cm => cm.DesiredWidth);
 
-            if (totalWidth <= availableWidth)
+            if (totalDesiredWidth <= availableWidth)
             {
-                // All columns fit - use capped widths with padding
-                foreach (var (column, width) in cappedMeasurements)
-                {
-                    column.Width = Math.Clamp(width + Padding, MinWidth, MaxWidth);
-                }
+                foreach (var (column, _, desiredWidth) in desiredMeasurements)
+                    column.Width = desiredWidth;
+
+                // Keep compact columns content-sized and let the final visible column
+                // consume the remaining viewport width.
+                var lastColumn = desiredMeasurements[^1].Column;
+                lastColumn.Width += availableWidth - totalDesiredWidth;
             }
             else
             {
-                // Need to scale down - distribute available width proportionally
-                double scale = availableWidth / totalWidth;
-
-                foreach (var (column, width) in cappedMeasurements)
+                double minimumTotal = desiredMeasurements.Sum(cm => cm.MinimumWidth);
+                if (minimumTotal >= availableWidth)
                 {
-                    double targetWidth = (width + Padding) * scale;
-                    column.Width = Math.Clamp(targetWidth, MinWidth, MaxWidth);
+                    foreach (var (column, minimumWidth, _) in desiredMeasurements)
+                        column.Width = minimumWidth;
+                    return;
+                }
+
+                double remainingWidth = availableWidth;
+                double remainingMinimum = minimumTotal;
+                foreach (var (column, minimumWidth, desiredWidth) in desiredMeasurements)
+                {
+                    remainingMinimum -= minimumWidth;
+                    double availableForColumn = remainingWidth - remainingMinimum;
+                    column.Width = Math.Min(desiredWidth, Math.Max(minimumWidth, availableForColumn));
+                    remainingWidth -= column.Width;
                 }
             }
+        }
+
+        private double MeasureColumnHeaderWidth(GridViewColumn column)
+        {
+            var header = new GridViewColumnHeader
+            {
+                Content = column.Header,
+                FontFamily = RequestList.FontFamily,
+                FontSize = RequestList.FontSize,
+                FontStretch = RequestList.FontStretch,
+                FontStyle = RequestList.FontStyle,
+                FontWeight = FontWeights.SemiBold,
+                Padding = new Thickness(6, 2, 6, 2),
+            };
+            header.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+            return Math.Ceiling(header.DesiredSize.Width);
         }
 
         private async void OpenFileButton_Click(object sender, RoutedEventArgs e)
@@ -712,7 +1744,10 @@ namespace HttpTraceAnalyser
 
             PopulateList();
             ClearViewers();
-            MainTabControl.SelectedIndex = 0; // Return to Summary tab when a new trace is loaded
+            if (_isSplitView)
+                TopLayoutTabControl.SelectedIndex = 0;
+            else
+                MainTabControl.SelectedIndex = 0;
             Title = _trace is null
                 ? "HTTP Trace Analyser"
                 : $"HTTP Trace Analyser - {Path.GetFileName(path)}";
@@ -907,6 +1942,9 @@ namespace HttpTraceAnalyser
         private void PopulateList()
         {
             ResetSortIndicator();
+            bool showProcess = _trace is SazTraceFile;
+            ProcessColumnMenuItem.Visibility = showProcess ? Visibility.Visible : Visibility.Collapsed;
+            ProcessColumnMenuItem.IsChecked = showProcess;
             RequestList.ItemsSource = _trace?.View;
             ApplyFilter();
 
@@ -1060,12 +2098,12 @@ namespace HttpTraceAnalyser
 
         private bool IsRequestTabSelected()
         {
-            return MainTabControl.SelectedIndex == 1; // Request is the second tab (index 1)
+            return _isSplitView || MainTabControl.SelectedIndex == 1; // Request is the second tab (index 1)
         }
 
         private bool IsResponseTabSelected()
         {
-            return MainTabControl.SelectedIndex == 2; // Response is the third tab (index 2)
+            return _isSplitView || MainTabControl.SelectedIndex == 2; // Response is the third tab (index 2)
         }
 
         private const int RestTabIndex = 3;
@@ -1828,17 +2866,25 @@ namespace HttpTraceAnalyser
                     Cursor = System.Windows.Input.Cursors.Hand,
                     Focusable = true,
                 };
-                link.Click += (_, _) => MainTabControl.SelectedIndex = tabIndex;
+                link.Click += (_, _) => SelectAnalysisTab(tabIndex);
                 // RichTextBox (even IsReadOnly) intercepts mouse-up for selection handling before
                 // Hyperlink.Click reliably fires, so also switch tabs on mouse-down as a fallback.
                 link.PreviewMouseLeftButtonDown += (_, args) =>
                 {
-                    MainTabControl.SelectedIndex = tabIndex;
+                    SelectAnalysisTab(tabIndex);
                     args.Handled = true;
                 };
                 para.Inlines.Add(link);
             }
             doc.Blocks.Add(para);
+        }
+
+        private void SelectAnalysisTab(int mainTabIndex)
+        {
+            if (_isSplitView)
+                TopLayoutTabControl.SelectedIndex = mainTabIndex - 1;
+            else
+                MainTabControl.SelectedIndex = mainTabIndex;
         }
 
         private static void AddStatusLine(FlowDocument doc, HttpResponse response)
@@ -1867,7 +2913,7 @@ namespace HttpTraceAnalyser
                     else
                     {
                         // Calculate brightness and use black for light backgrounds, white for dark
-                        p.Foreground = GetContrastingForeground(matchedRule.BackgroundColor);
+                        p.Foreground = ThemeManager.GetContrastingForeground(matchedRule.BackgroundColor);
                     }
                 }
 
@@ -2344,29 +3390,6 @@ namespace HttpTraceAnalyser
 
         private static string FormatTimestamp(DateTimeOffset? timestamp)
             => timestamp?.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss.fff") ?? "(unknown)";
-
-        /// <summary>
-        /// Returns a contrasting foreground brush (black or white) based on the brightness
-        /// of the given background color, ensuring text remains readable.
-        /// </summary>
-        private static Brush GetContrastingForeground(Color backgroundColor)
-        {
-            // Calculate relative luminance using the standard formula (Rec. 709)
-            // https://www.w3.org/TR/WCAG20/#relativeluminancedef
-            double r = backgroundColor.R / 255.0;
-            double g = backgroundColor.G / 255.0;
-            double b = backgroundColor.B / 255.0;
-
-            // Apply gamma correction
-            r = r <= 0.03928 ? r / 12.92 : Math.Pow((r + 0.055) / 1.055, 2.4);
-            g = g <= 0.03928 ? g / 12.92 : Math.Pow((g + 0.055) / 1.055, 2.4);
-            b = b <= 0.03928 ? b / 12.92 : Math.Pow((b + 0.055) / 1.055, 2.4);
-
-            double luminance = 0.2126 * r + 0.7152 * g + 0.0722 * b;
-
-            // Use white text for dark backgrounds (luminance < 0.5), black for light backgrounds
-            return luminance < 0.5 ? Brushes.White : Brushes.Black;
-        }
 
             }
         }
