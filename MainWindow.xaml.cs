@@ -771,6 +771,14 @@ namespace HttpTraceAnalyser
                 await SetViewLayoutAsync(window.UseSplitView);
                 await ApplyMcpSettingsAsync(window.HostMcpServer, window.McpPort);
 
+                McpServerButton.Checked -= McpServerButton_Checked;
+                McpServerButton.Unchecked -= McpServerButton_Unchecked;
+                McpServerButton.IsChecked = McpHostManager.IsRunning;
+                McpServerButton.Content = McpHostManager.IsRunning ? "Disable" : "Enable";
+                McpServerButton.Tag = McpHostManager.IsRunning ? "\uE8CE" : "\uE8CD";
+                McpServerButton.Checked += McpServerButton_Checked;
+                McpServerButton.Unchecked += McpServerButton_Unchecked;
+
                 AppSettings.ThemePreference = window.SelectedThemePreference;
                 AppSettings.UseSplitView = window.UseSplitView;
                 AppSettings.McpPort = window.McpPort;
@@ -797,6 +805,47 @@ namespace HttpTraceAnalyser
 
             if (shouldRun && !McpHostManager.IsRunning)
                 await McpHostManager.StartAsync();
+        }
+
+        private async void McpServerButton_Checked(object sender, RoutedEventArgs e)
+        {
+            McpServerButton.IsEnabled = false;
+            try
+            {
+                await McpHostManager.StartAsync();
+                McpServerButton.Content = "Disable";
+                McpServerButton.Tag = "\uE8CE";
+            }
+            catch (Exception ex)
+            {
+                McpServerButton.IsChecked = false;
+                MessageBox.Show(this, $"Failed to start the MCP server:\n{ex.Message}",
+                    "MCP Server", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+            finally
+            {
+                McpServerButton.IsEnabled = true;
+            }
+        }
+
+        private async void McpServerButton_Unchecked(object sender, RoutedEventArgs e)
+        {
+            McpServerButton.IsEnabled = false;
+            try
+            {
+                await McpHostManager.StopAsync();
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(this, $"Failed to stop the MCP server cleanly:\n{ex.Message}",
+                    "MCP Server", MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
+            finally
+            {
+                McpServerButton.Content = "Enable";
+                McpServerButton.Tag = "\uE8CD";
+                McpServerButton.IsEnabled = true;
+            }
         }
 
         private async Task SetViewLayoutAsync(bool useSplitView)

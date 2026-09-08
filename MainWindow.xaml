@@ -154,6 +154,20 @@
                                 <TextBlock Text="Navigation" Style="{StaticResource RibbonGroupLabelStyle}" />
                             </StackPanel>
                         </Border>
+
+                        <!-- MCP Server group -->
+                        <Border Style="{StaticResource RibbonGroupStyle}" BorderThickness="0">
+                            <StackPanel Orientation="Vertical">
+                                <StackPanel Orientation="Horizontal">
+                                    <ToggleButton x:Name="McpServerButton" Content="Enable"
+                                                  Tag="&#xE8CD;"
+                                                  Style="{StaticResource RibbonToggleButtonStyle}"
+                                                  Checked="McpServerButton_Checked"
+                                                  Unchecked="McpServerButton_Unchecked" />
+                                </StackPanel>
+                                <TextBlock Text="MCP Server" Style="{StaticResource RibbonGroupLabelStyle}" />
+                            </StackPanel>
+                        </Border>
                     </StackPanel>
                 </DockPanel>
             </Border>
@@ -253,8 +267,11 @@
                                     </Border>
                                     <ControlTemplate.Triggers>
                                         <Trigger Property="IsSelected" Value="True">
+                                            <Setter Property="FontWeight" Value="SemiBold" />
+                                            <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}" />
                                             <Setter TargetName="SelectionBorder" Property="BorderBrush" Value="{DynamicResource AccentFillColorDefaultBrush}" />
                                             <Setter TargetName="SelectionBorder" Property="Background" Value="{DynamicResource ControlFillColorSecondaryBrush}" />
+                                            <Setter TargetName="SelectionBorder" Property="BorderThickness" Value="2" />
                                         </Trigger>
                                     </ControlTemplate.Triggers>
                                 </ControlTemplate>
