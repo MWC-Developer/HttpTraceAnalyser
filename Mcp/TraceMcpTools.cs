@@ -123,7 +123,11 @@ namespace HttpTraceAnalyser.Mcp
                     BackgroundColor = background,
                     ForegroundColor = foreground,
                 };
-                HighlightRuleSet.Rules.Add(rule);
+                // Insert at the top so newly added rules take precedence over existing ones
+                // (matching are evaluated top-to-bottom, first match wins). Otherwise a new
+                // rule could be silently shadowed by an earlier rule (e.g. a default
+                // response-range rule) that also matches the same row.
+                HighlightRuleSet.Rules.Insert(0, rule);
                 return $"Added highlight rule: {column} {@operator} '{value}' (background {backgroundColorHex}).";
             });
         }

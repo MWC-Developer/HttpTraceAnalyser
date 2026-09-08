@@ -20,15 +20,10 @@ namespace HttpTraceAnalyser
         public static IValueConverter ColorBrushConverter { get; } = new ColorToBrushConverter();
 
         private readonly System.Collections.ObjectModel.ObservableCollection<HighlightRule> _rules;
-        private readonly uint[] _customColors = new uint[16];
         private Point _dragStartPoint;
         private HighlightRule? _draggedRule;
         private AdornerLayer? _dropAdornerLayer;
         private RuleDropAdorner? _dropAdorner;
-
-        private const uint ChooseColorRgbInit = 0x00000001;
-        private const uint ChooseColorFullOpen = 0x00000002;
-        private const uint ChooseColorAnyColor = 0x00000100;
 
         public HighlightsWindow()
         {
@@ -39,23 +34,24 @@ namespace HttpTraceAnalyser
             RulesGrid.ItemsSource = _rules;
         }
 
-        private void ApplyThemedComboBoxColumnStyles()
+        /// <summary>
+        /// WPF's DataGrid normally requires a cell to already be selected/focused before a click
+        /// can reach an embedded editor (e.g. a CheckBoxColumn's CheckBox or a ComboBoxColumn's
+        /// dropdown), so the very first click on an unselected cell only selects it rather than
+        /// toggling/opening it. Focus the cell being clicked and put it into edit mode so the same
+        /// click reaches the real editing element - without handling/swallowing the event so the
+        /// editor still receives it normally. Beginning the edit is essential for ComboBox columns:
+        /// a selection made on the non-editing element is discarded when the cell is regenerated.
+        /// </summary>
+        private void RulesGridCell_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
         {
-            if (TryFindResource(typeof(ComboBox)) is not Style themedComboBoxStyle)
+            if (sender is not DataGridCell { IsEditing: false, IsReadOnly: false } cell)
                 return;
 
-            foreach (var column in RulesGrid.Columns)
-            {
-                if (column is not DataGridComboBoxColumn comboColumn)
-                    continue;
+            if (!cell.IsFocused)
+                cell.Focus();
 
-                var style = new Style(typeof(ComboBox), themedComboBoxStyle);
-                style.Setters.Add(new Setter(ComboBox.IsSynchronizedWithCurrentItemProperty, false));
-                style.Seal();
-
-                comboColumn.ElementStyle = style;
-                comboColumn.EditingElementStyle = style;
-            }
+            RulesGrid.BeginEdit(e);
         }
 
         private void AddButton_Click(object sender, RoutedEventArgs e)
@@ -340,47 +336,28 @@ namespace HttpTraceAnalyser
             if (sender is not Button { DataContext: HighlightRule rule, Tag: string target })
                 return;
 
-            var currentColor = target == "Foreground"
-                ? rule.ForegroundColor ?? ThemeManager.GetContrastingColor(rule.BackgroundColor)
-                : rule.BackgroundColor;
+            bool isForeground = target == "Foreground";
+            Color? currentColor = isForeground ? rule.ForegroundColor : rule.BackgroundColor;
 
-            var customColorsHandle = GCHandle.Alloc(_customColors, GCHandleType.Pinned);
-            try
-            {
-                var dialog = new ChooseColorData
-                {
-                    StructSize = Marshal.SizeOf<ChooseColorData>(),
-                    Owner = new WindowInteropHelper(this).Handle,
-                    Color = ToColorRef(currentColor),
-                    CustomColors = customColorsHandle.AddrOfPinnedObject(),
-                    Flags = ChooseColorRgbInit | ChooseColorFullOpen | ChooseColorAnyColor,
-                };
+            var picker = new ColorPickerWindow(currentColor, canClear: true) { Owner = this };
+            if (picker.ShowDialog() != true)
+                return;
 
-                if (!ChooseColor(ref dialog))
-                    return;
-
-                var selected = FromColorRef(dialog.Color);
-                if (target == "Foreground")
-                    rule.ForegroundColor = selected;
-                else
-                    rule.BackgroundColor = selected;
-            }
-            finally
-            {
-                customColorsHandle.Free();
-            }
+            if (isForeground)
+                rule.ForegroundColor = picker.SelectedColor;
+            else
+                rule.BackgroundColor = picker.SelectedColor ?? Colors.Transparent;
         }
 
-        private static uint ToColorRef(Color color)
-            => (uint)(color.R | color.G << 8 | color.B << 16);
-
-        private static Color FromColorRef(uint color)
-            => Color.FromRgb((byte)color, (byte)(color >> 8), (byte)(color >> 16));
-
-        private void ClearForegroundButton_Click(object sender, RoutedEventArgs e)
+        private void ClearColorButton_Click(object sender, RoutedEventArgs e)
         {
-            if (sender is Button { DataContext: HighlightRule rule })
+            if (sender is not Button { DataContext: HighlightRule rule, Tag: string target })
+                return;
+
+            if (target == "Foreground")
                 rule.ForegroundColor = null;
+            else
+                rule.BackgroundColor = Colors.Transparent;
         }
 
         private sealed class ColorToBrushConverter : IValueConverter
@@ -391,23 +368,5 @@ namespace HttpTraceAnalyser
             public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
                 => Binding.DoNothing;
         }
-
-        [StructLayout(LayoutKind.Sequential)]
-        private struct ChooseColorData
-        {
-            public int StructSize;
-            public IntPtr Owner;
-            public IntPtr Instance;
-            public uint Color;
-            public IntPtr CustomColors;
-            public uint Flags;
-            public IntPtr CustomData;
-            public IntPtr Hook;
-            public IntPtr TemplateName;
-        }
-
-        [DllImport("comdlg32.dll", EntryPoint = "ChooseColorW")]
-        [return: MarshalAs(UnmanagedType.Bool)]
-        private static extern bool ChooseColor(ref ChooseColorData chooseColor);
     }
 }

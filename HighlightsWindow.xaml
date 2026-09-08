@@ -52,10 +52,15 @@
 
         <DataGrid x:Name="RulesGrid" AutoGenerateColumns="False"
                   CanUserAddRows="False" CanUserDeleteRows="False"
-                  SelectionMode="Extended" AllowDrop="True"
+                  SelectionMode="Extended" SelectionUnit="FullRow" AllowDrop="True"
                   PreviewMouseLeftButtonDown="RulesGrid_PreviewMouseLeftButtonDown"
                   DragOver="RulesGrid_DragOver" DragLeave="RulesGrid_DragLeave"
                   Drop="RulesGrid_Drop">
+            <DataGrid.CellStyle>
+                <Style TargetType="DataGridCell">
+                    <EventSetter Event="PreviewMouseLeftButtonDown" Handler="RulesGridCell_PreviewMouseLeftButtonDown" />
+                </Style>
+            </DataGrid.CellStyle>
             <DataGrid.Columns>
                 <DataGridTemplateColumn Width="32" IsReadOnly="True">
                     <DataGridTemplateColumn.CellStyle>
@@ -90,22 +95,31 @@
                 <DataGridTextColumn Header="Value"
                                     Binding="{Binding Value, UpdateSourceTrigger=PropertyChanged}"
                                     Width="180" />
-                <DataGridTemplateColumn Header="Background" Width="110">
+                <DataGridTemplateColumn Header="Background" Width="140" IsReadOnly="True">
                     <DataGridTemplateColumn.CellTemplate>
                         <DataTemplate>
-                            <Button Click="ColorPickerButton_Click" Tag="Background"
-                                    Padding="3" HorizontalAlignment="Stretch"
-                                    HorizontalContentAlignment="Stretch"
-                                    ToolTip="Choose background colour">
-                                <Border Height="20"
-                                        Background="{Binding BackgroundColor, Converter={x:Static local:HighlightsWindow.ColorBrushConverter}}"
-                                        BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}"
-                                        BorderThickness="1" />
-                            </Button>
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <Button Grid.Column="0" Click="ColorPickerButton_Click" Tag="Background"
+                                        Padding="3" HorizontalAlignment="Stretch"
+                                        HorizontalContentAlignment="Stretch"
+                                        ToolTip="Choose background colour">
+                                    <Border Height="20"
+                                            Background="{Binding BackgroundColor, Converter={x:Static local:HighlightsWindow.ColorBrushConverter}}"
+                                            BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}"
+                                            BorderThickness="1" />
+                                </Button>
+                                <Button Grid.Column="1" Content="&#x2715;" Margin="3,0,0,0" Padding="6,0"
+                                        Click="ClearColorButton_Click" Tag="Background"
+                                        ToolTip="Clear background colour" />
+                            </Grid>
                         </DataTemplate>
                     </DataGridTemplateColumn.CellTemplate>
                 </DataGridTemplateColumn>
-                <DataGridTemplateColumn Header="Foreground" Width="140">
+                <DataGridTemplateColumn Header="Foreground" Width="140" IsReadOnly="True">
                     <DataGridTemplateColumn.CellTemplate>
                         <DataTemplate>
                             <Grid>
@@ -123,7 +137,7 @@
                                             BorderThickness="1" />
                                 </Button>
                                 <Button Grid.Column="1" Content="&#x2715;" Margin="3,0,0,0" Padding="6,0"
-                                        Click="ClearForegroundButton_Click"
+                                        Click="ClearColorButton_Click" Tag="Foreground"
                                         ToolTip="Use automatic foreground colour" />
                             </Grid>
                         </DataTemplate>
