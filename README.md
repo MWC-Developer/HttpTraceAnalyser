@@ -1,6 +1,6 @@
 # HTTP Trace Analyser
 
-A Windows desktop app for opening HTTP trace captures produced by different tools, browsing the request/response list, filtering and highlighting rows of interest, and inspecting individual request/response bodies with format-aware viewers.
+A Windows desktop app for opening HTTP trace captures produced by different tools, browsing the request/response list, filtering and highlighting rows of interest, and inspecting individual request/response bodies with format-aware viewers. Multiple trace files can be loaded concurrently as independent **sessions**, each with its own filter and highlight configuration, switchable from an always-visible sessions panel or driven externally via the built-in MCP server.
 
 Built with WPF on **.NET 10** (`net10.0-windows`).
 
@@ -31,6 +31,16 @@ The `ListView` binds to `DataTable.DefaultView`, which gives free **grid virtual
 - **Sort** — left-click a header to cycle **none ▸ ascending ▲ ▸ descending ▼**. Powered by `DataView.Sort` so sorting is O(n log n) on the underlying table.
 - **Row removal** — right-click a row → *Remove* to drop selected rows.
 
+### Sessions
+
+Each loaded trace file is a **session**, tracked by `Model/TraceSessionManager`. The sessions panel on the left of the main window (collapsible via the rail button, resizable via its splitter) always lists every loaded session by file name, with the active one shown in bold:
+
+- Click a session to switch the grid/viewers to show it (no disk re-read).
+- The **+** button in the panel header opens a file picker to load an additional trace as a new session.
+- The **✕** next to a session closes (unloads) it, freeing its memory; closing the active session auto-switches to another loaded session, or clears the viewer if none remain.
+
+Each session owns its own independent `FilterRuleCollection` and `HighlightRuleCollection` (see `Model/TraceSessionManager.cs`) — filters and highlight rules set while one session is active do not apply to any other loaded session. The **Filter**/**Highlights** editors, and the corresponding MCP tools, always operate on the currently active session's rules.
+
 ### Highlighting
 
 `Model/HighlightRule` + `HighlightRuleSet` describe row-colour rules. A rule can match any session-grid field, including `Process` and plugin-contributed fields, using one of `Equals`, `NotEquals`, `Contains`, `StartsWith`, `Regex`, or `Range` (numeric `min-max`, e.g. `400-599`).
@@ -41,7 +51,7 @@ Defaults ship with:
 - `200-299` → light green
 - `400-599` → light red
 
-Rules are managed from **Highlights** in the toolbar, which opens a dedicated editor. Edits are made to a working copy; **OK** commits them and **Cancel** discards them. **Load...** and **Save As...** import/export a rule set as JSON; **Set Default** persists the current working copy as the set loaded at startup; **Reset** replaces the working copy with the saved default (or, with Shift held, the built-in factory defaults). First matching enabled rule wins; the resulting `Brush` is stored in the row's `RowBackground` / `RowForeground` columns and consumed by the `ListView` `ItemContainerStyle`.
+Rules are managed from **Highlights** in the toolbar, which opens a dedicated editor. Edits are made to a working copy; **OK** commits them and **Cancel** discards them. **Load...** and **Save As...** import/export a rule set as JSON; **Set Default** persists the current working copy as the set loaded at startup; **Reset** replaces the working copy with the saved default (or, with Shift held, the built-in factory defaults). Rules can be reordered via drag-and-drop (using the grip handle on each row); first matching enabled rule wins. Background/foreground colours are picked via an in-app themed `ColorPickerWindow` (swatch palette, hex entry, and a Clear button per colour) rather than the OS colour dialog, so it follows the app's light/dark theme. The resulting `Brush` is stored in the row's `RowBackground` / `RowForeground` columns and consumed by the `ListView` `ItemContainerStyle`.
 
 ### Filtering
 
@@ -132,18 +142,46 @@ gh copilot mcp list
 
 ### Available tools
 
-Exposed from [`Mcp/TraceMcpTools.cs`](Mcp/TraceMcpTools.cs):
+Exposed from [`Mcp/TraceMcpTools.cs`](Mcp/TraceMcpTools.cs). All tool calls are serialized (a single call executes at a time) and marshaled onto the UI thread, so results appear live in the running window and calls can't race each other's effects.
+
+**Sessions**
+
+| Tool | Purpose |
+| --- | --- |
+| `LoadTraceFile` | Loads a trace file from disk as a new session. Defaults to replacing the shown trace; pass `sessionId`/`label` and `activate: false` to load additional traces in the background. |
+| `ListTraceSessions` | Lists every loaded session (id, label, path, row count, load time, active flag). |
+| `SwitchTraceSession` | Switches which loaded session is shown, without re-reading the file. |
+| `CloseTraceSession` | Unloads a session, auto-switching to another one (or clearing the viewer) if it was active. |
+| `DiffTraces` | Compares two sessions: rows unique to each side, and status/latency/body-length differences for rows correlated by `ClientRequestId`/`X-RequestId` (falling back to `Path` order). Supports `detail: "summary"\|"full"`, a `columns` filter, and `format`. |
+
+**Inspecting the active (or any loaded) trace**
 
 | Tool | Purpose |
 | --- | --- |
 | `GetTraceInfo` | Returns the loaded trace's file path and message count. |
-| `SearchTrace` | Searches URL/Host/Path/Method columns for matching rows. |
-| `HighlightTrace` | Adds a highlight rule (column/operator/value/colors) to `HighlightRuleSet`. |
-| `ClearHighlights` | Removes all highlight rules. |
-| `FilterTrace` | Adds a filter rule (field/comparator/value/combinator) to `FilterRuleSet`. |
-| `ClearFilters` | Removes all filter rules. |
+| `GetStatus` | Snapshot of trace path/row count, rows visible under the active filter, and the active filter/highlight rules. |
+| `SearchTrace` | Searches rows for matching text; `scope` selects headers, body, or both. |
+| `GetTraceRow` | Full detail for one row: headers, decoded bodies, status, URL. |
+| `GetRows` | Paged rows (optionally filtered, with a column subset) as JSON, CSV, Markdown, or a text table. |
+| `AggregateTrace` | Groups rows by one or two fields with counts, e.g. status-code distribution or hot endpoints. |
+
+**Selecting rows in the UI**
+
+| Tool | Purpose |
+| --- | --- |
 | `SelectTraceRow` | Selects a row by its `Index` column value so it populates the viewers. |
 | `FindAndSelectTraceRow` | Finds the first row matching a field/comparator/value across the whole trace (ignoring active filters) and selects it. |
+
+**Filter and highlight rules (active session)**
+
+| Tool | Purpose |
+| --- | --- |
+| `HighlightTrace` | Adds a highlight rule (column/operator/value/colors). |
+| `ClearHighlights` | Removes all highlight rules. |
+| `FilterTrace` | Adds a filter rule (field/comparator/value/combinator). |
+| `ClearFilters` | Removes all filter rules. |
+
+Most tools returning row data support `stripQueryParams` (redacts known noisy auth query-string tokens such as `McasUserAuth`/`McasCtx`/`McasTsid`, default on) and `maxUrlLength` (default 200) to keep responses compact.
 
 Example prompts once the CLI is connected:
 
@@ -151,8 +189,10 @@ Example prompts once the CLI is connected:
 - *"Highlight every row where the host contains 'contoso.com' in orange."*
 - *"Filter the trace to only show POST requests."*
 - *"Select the first request that returned a 500 error."*
+- *"Load good.har and bad.har as separate sessions and tell me what differs between them."*
+- *"Group the trace by response code and show me the distribution."*
 
-All tool calls are marshaled onto the UI thread, so results appear live in the running window — no need to switch back to the app to see the effect. For example, asking the CLI to locate an error selects the matching row in HttpTraceAnalyser so it's shown in the viewers:
+For example, asking the CLI to locate an error selects the matching row in HttpTraceAnalyser so it's shown in the viewers:
 
 ![GitHub Copilot CLI locating and selecting an error response in HttpTraceAnalyser](images/MCPControlShowError.png)
 
@@ -176,7 +216,6 @@ Or open `HttpTraceAnalyser.slnx` in Visual Studio 2026 (or newer) and press **F5
 | [Microsoft.Diagnostics.Tracing.TraceEvent](https://www.nuget.org/packages/Microsoft.Diagnostics.Tracing.TraceEvent) | Managed ETW parser used by the `.etl` loader. |
 | [SharpVectors.Reloaded](https://www.nuget.org/packages/SharpVectors.Reloaded) | WPF SVG rendering. |
 | [ModelContextProtocol.AspNetCore](https://www.nuget.org/packages/ModelContextProtocol.AspNetCore) | Hosts the in-process MCP server used for GitHub Copilot CLI integration. |
-| [Microsoft.Extensions.Hosting](https://www.nuget.org/packages/Microsoft.Extensions.Hosting) | Generic host used to run the MCP server alongside the WPF UI. |
 
 ## Project layout
 
@@ -189,6 +228,7 @@ HttpTraceAnalyser/
 ├─ CustomColumnsWindow.xaml(.cs) // user-defined header-derived columns
 ├─ FilterWindow.xaml(.cs)      // filter rule editor
 ├─ HighlightsWindow.xaml(.cs)  // highlight rule editor
+├─ ColorPickerWindow.xaml(.cs) // themed in-app colour picker (swatches + hex entry)
 ├─ AppSettings.cs              // persisted appearance/layout/MCP-port preferences
 ├─ McpHostManager.cs           // starts/stops the in-process MCP HTTP server
 ├─ Mcp/
@@ -203,6 +243,7 @@ HttpTraceAnalyser/
    ├─ EwsTraceFile.cs          // EWS .trace loader
    ├─ HighlightRule.cs         // row-highlighting rules
    ├─ FilterRule.cs            // DataView filter rules
+   ├─ TraceSessionManager.cs   // multi-session registry (loaded traces + per-session filter/highlight state)
    ├─ RulePersistence.cs       // shared versioned JSON persistence for filter/highlight rules
    ├─ JsonConfigurationPersistence.cs // shared JSON read/write engine (options, atomic save, validation)
    ├─ DataGridThemeHelper.cs   // shared themed-ComboBox-column styling for the rule editors
