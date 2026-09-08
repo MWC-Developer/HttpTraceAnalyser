@@ -560,9 +560,22 @@
                         <Grid Grid.Row="4" x:Name="RequestBodyPanel">
                             <Grid.RowDefinitions>
                                 <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
                                 <RowDefinition Height="*" />
                             </Grid.RowDefinitions>
-                            <Border x:Name="RequestBodyFindBar" Grid.Row="0" Visibility="Collapsed"
+                            <Border x:Name="RequestBodyLargePayloadBanner" Grid.Row="0" Visibility="Collapsed"
+                                    Background="{DynamicResource LayerFillColorAltBrush}"
+                                    BorderBrush="{DynamicResource DividerStrokeColorDefaultBrush}"
+                                    BorderThickness="0,0,0,1" Padding="8,4">
+                                <DockPanel LastChildFill="True">
+                                    <Button DockPanel.Dock="Right" x:Name="RequestBodyFormatAnywayButton"
+                                            Content="Format anyway" Padding="8,2" Margin="8,0,0,0"
+                                            Click="RequestFormatAnywayButton_Click" />
+                                    <TextBlock x:Name="RequestBodyLargePayloadMessage" TextWrapping="Wrap"
+                                               VerticalAlignment="Center" />
+                                </DockPanel>
+                            </Border>
+                            <Border x:Name="RequestBodyFindBar" Grid.Row="1" Visibility="Collapsed"
                                     Background="{DynamicResource LayerFillColorDefaultBrush}"
                                     BorderBrush="{DynamicResource DividerStrokeColorDefaultBrush}"
                                     BorderThickness="0,0,0,1" Padding="4">
@@ -585,7 +598,7 @@
                                              TextChanged="LocalFindText_TextChanged" />
                                 </DockPanel>
                             </Border>
-                            <avalonedit:TextEditor Grid.Row="1" x:Name="RequestPayloadEditor"
+                            <avalonedit:TextEditor Grid.Row="2" x:Name="RequestPayloadEditor"
                                                    IsReadOnly="True" ShowLineNumbers="True"
                                                    FontFamily="Consolas"
                                                    VerticalScrollBarVisibility="Auto"
@@ -600,7 +613,7 @@
                                     </ContextMenu>
                                 </avalonedit:TextEditor.ContextMenu>
                             </avalonedit:TextEditor>
-                            <ScrollViewer Grid.Row="1" x:Name="RequestPayloadImageScroll"
+                            <ScrollViewer Grid.Row="2" x:Name="RequestPayloadImageScroll"
                                           HorizontalScrollBarVisibility="Auto"
                                           VerticalScrollBarVisibility="Auto"
                                           Background="White"
@@ -608,7 +621,7 @@
                                 <Image x:Name="RequestPayloadImage" Stretch="None"
                                        HorizontalAlignment="Left" VerticalAlignment="Top" />
                             </ScrollViewer>
-                            <ScrollViewer Grid.Row="1" x:Name="RequestPayloadSvgScroll"
+                            <ScrollViewer Grid.Row="2" x:Name="RequestPayloadSvgScroll"
                                           HorizontalScrollBarVisibility="Auto"
                                           VerticalScrollBarVisibility="Auto"
                                           Background="White"
@@ -617,7 +630,7 @@
                                                  HorizontalAlignment="Left"
                                                  VerticalAlignment="Top" />
                             </ScrollViewer>
-                            <TextBlock Grid.Row="1" x:Name="RequestNoPayloadText" Text="(no payload)"
+                            <TextBlock Grid.Row="2" x:Name="RequestNoPayloadText" Text="(no payload)"
                                        FontStyle="Italic"
                                        Foreground="{DynamicResource TextFillColorSecondaryBrush}" Padding="6"
                                        VerticalAlignment="Top" HorizontalAlignment="Left"
@@ -703,9 +716,22 @@
                         <Grid Grid.Row="4" x:Name="ResponseBodyPanel">
                             <Grid.RowDefinitions>
                                 <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
                                 <RowDefinition Height="*" />
                             </Grid.RowDefinitions>
-                            <Border x:Name="ResponseBodyFindBar" Grid.Row="0" Visibility="Collapsed"
+                            <Border x:Name="ResponseBodyLargePayloadBanner" Grid.Row="0" Visibility="Collapsed"
+                                    Background="{DynamicResource LayerFillColorAltBrush}"
+                                    BorderBrush="{DynamicResource DividerStrokeColorDefaultBrush}"
+                                    BorderThickness="0,0,0,1" Padding="8,4">
+                                <DockPanel LastChildFill="True">
+                                    <Button DockPanel.Dock="Right" x:Name="ResponseBodyFormatAnywayButton"
+                                            Content="Format anyway" Padding="8,2" Margin="8,0,0,0"
+                                            Click="ResponseFormatAnywayButton_Click" />
+                                    <TextBlock x:Name="ResponseBodyLargePayloadMessage" TextWrapping="Wrap"
+                                               VerticalAlignment="Center" />
+                                </DockPanel>
+                            </Border>
+                            <Border x:Name="ResponseBodyFindBar" Grid.Row="1" Visibility="Collapsed"
                                     Background="{DynamicResource LayerFillColorDefaultBrush}"
                                     BorderBrush="{DynamicResource DividerStrokeColorDefaultBrush}"
                                     BorderThickness="0,0,0,1" Padding="4">
@@ -728,7 +754,7 @@
                                              TextChanged="LocalFindText_TextChanged" />
                                 </DockPanel>
                             </Border>
-                            <avalonedit:TextEditor Grid.Row="1" x:Name="ResponsePayloadEditor"
+                            <avalonedit:TextEditor Grid.Row="2" x:Name="ResponsePayloadEditor"
                                                    IsReadOnly="True" ShowLineNumbers="True"
                                                    FontFamily="Consolas"
                                                    VerticalScrollBarVisibility="Auto"
@@ -743,7 +769,7 @@
                                     </ContextMenu>
                                 </avalonedit:TextEditor.ContextMenu>
                             </avalonedit:TextEditor>
-                            <ScrollViewer Grid.Row="1" x:Name="ResponsePayloadImageScroll"
+                            <ScrollViewer Grid.Row="2" x:Name="ResponsePayloadImageScroll"
                                           HorizontalScrollBarVisibility="Auto"
                                           VerticalScrollBarVisibility="Auto"
                                           Background="White"
@@ -751,7 +777,7 @@
                                 <Image x:Name="ResponsePayloadImage" Stretch="None"
                                        HorizontalAlignment="Left" VerticalAlignment="Top" />
                             </ScrollViewer>
-                            <ScrollViewer Grid.Row="1" x:Name="ResponsePayloadSvgScroll"
+                            <ScrollViewer Grid.Row="2" x:Name="ResponsePayloadSvgScroll"
                                           HorizontalScrollBarVisibility="Auto"
                                           VerticalScrollBarVisibility="Auto"
                                           Background="White"
@@ -760,7 +786,7 @@
                                                  HorizontalAlignment="Left"
                                                  VerticalAlignment="Top" />
                             </ScrollViewer>
-                            <TextBlock Grid.Row="1" x:Name="ResponseNoPayloadText" Text="(no payload)"
+                            <TextBlock Grid.Row="2" x:Name="ResponseNoPayloadText" Text="(no payload)"
                                        FontStyle="Italic"
                                        Foreground="{DynamicResource TextFillColorSecondaryBrush}" Padding="6"
                                        VerticalAlignment="Top" HorizontalAlignment="Left"
