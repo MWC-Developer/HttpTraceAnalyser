@@ -213,15 +213,20 @@ namespace HttpTraceAnalyser.Model
     }
 
     /// <summary>Central store of active filter rules; combined left-to-right using each rule's <see cref="FilterRule.Combinator"/>.</summary>
-    public static class FilterRuleSet
+    /// <summary>
+    /// Holds a session's active filter rules; combined left-to-right using each rule's
+    /// <see cref="FilterRule.Combinator"/>. Each loaded trace session owns its own independent
+    /// instance (see <see cref="TraceSession.Filters"/>) so filters on one trace never affect another.
+    /// </summary>
+    public sealed class FilterRuleCollection
     {
-        private static bool _suppressNotifications;
+        private bool _suppressNotifications;
 
-        public static ObservableCollection<FilterRule> Rules { get; } = new();
+        public ObservableCollection<FilterRule> Rules { get; } = new();
 
-        public static event EventHandler? FiltersChanged;
+        public event EventHandler? FiltersChanged;
 
-        static FilterRuleSet()
+        public FilterRuleCollection()
         {
             Rules.CollectionChanged += OnCollectionChanged;
             if (System.IO.File.Exists(RulePersistence.FilterDefaultPath))
@@ -238,9 +243,9 @@ namespace HttpTraceAnalyser.Model
         }
 
         /// <summary>Replaces the active rules with the given set, e.g. after a dialog commits its draft.</summary>
-        public static void Replace(System.Collections.Generic.IEnumerable<FilterRule> rules) => ReplaceRules(rules);
+        public void Replace(System.Collections.Generic.IEnumerable<FilterRule> rules) => ReplaceRules(rules);
 
-        private static void ReplaceRules(System.Collections.Generic.IEnumerable<FilterRule> rules)
+        private void ReplaceRules(System.Collections.Generic.IEnumerable<FilterRule> rules)
         {
             _suppressNotifications = true;
             try
@@ -256,7 +261,7 @@ namespace HttpTraceAnalyser.Model
             RaiseChanged();
         }
 
-        private static void OnCollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
+        private void OnCollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
         {
             if (e.OldItems is not null)
             {
@@ -273,12 +278,12 @@ namespace HttpTraceAnalyser.Model
             RaiseChanged();
         }
 
-        private static void OnRulePropertyChanged(object? sender, PropertyChangedEventArgs e) => RaiseChanged();
+        private void OnRulePropertyChanged(object? sender, PropertyChangedEventArgs e) => RaiseChanged();
 
-        private static void RaiseChanged()
+        private void RaiseChanged()
         {
             if (!_suppressNotifications)
-                FiltersChanged?.Invoke(null, EventArgs.Empty);
+                FiltersChanged?.Invoke(this, EventArgs.Empty);
         }
 
         /// <summary>
@@ -286,7 +291,7 @@ namespace HttpTraceAnalyser.Model
         /// left-to-right using each rule's <see cref="FilterRule.Combinator"/>.
         /// Returns an empty string when there are no rules.
         /// </summary>
-        public static string BuildRowFilter()
+        public string BuildRowFilter()
         {
             if (Rules.Count == 0)
                 return string.Empty;
@@ -316,5 +321,37 @@ namespace HttpTraceAnalyser.Model
             }
             return sb.ToString();
         }
+    }
+
+    /// <summary>
+    /// Central static façade over the currently active trace session's <see cref="FilterRuleCollection"/>
+    /// (see <see cref="TraceSessionManager.GetActive"/>). Existing callers keep using this static class
+    /// exactly as before; it now transparently forwards to whichever session is shown, or a standalone
+    /// fallback instance when no session is loaded (e.g. at application startup).
+    /// </summary>
+    public static class FilterRuleSet
+    {
+        private static readonly FilterRuleCollection FallbackCollection = new();
+
+        private static FilterRuleCollection Current
+            => TraceSessionManager.GetActive()?.Filters ?? FallbackCollection;
+
+        public static ObservableCollection<FilterRule> Rules => Current.Rules;
+
+        public static event EventHandler? FiltersChanged
+        {
+            add => Current.FiltersChanged += value;
+            remove => Current.FiltersChanged -= value;
+        }
+
+        /// <summary>Replaces the active rules with the given set, e.g. after a dialog commits its draft.</summary>
+        public static void Replace(System.Collections.Generic.IEnumerable<FilterRule> rules) => Current.Replace(rules);
+
+        /// <summary>
+        /// Builds a <see cref="System.Data.DataView.RowFilter"/> expression that combines all rules
+        /// left-to-right using each rule's <see cref="FilterRule.Combinator"/>.
+        /// Returns an empty string when there are no rules.
+        /// </summary>
+        public static string BuildRowFilter() => Current.BuildRowFilter();
     }
 }

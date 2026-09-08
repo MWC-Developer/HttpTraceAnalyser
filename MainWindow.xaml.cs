@@ -150,19 +150,60 @@ namespace HttpTraceAnalyser
             };
             SourceInitialized += MainWindow_SourceInitialized;
 
-            HighlightRuleSet.RulesChanged += OnHighlightRulesChanged;
-            FilterRuleSet.FiltersChanged += OnFilterRulesChanged;
+            // FilterRuleSet/HighlightRuleSet forward to whichever session is currently active, which
+            // changes over time (session switch), so subscribe to the active session's collections
+            // directly and resubscribe whenever the active session changes, rather than relying on
+            // the static façade's add/remove accessors (those only bind to whatever is "current" at
+            // subscribe time).
+            TraceSessionManager.ActiveSessionChanged += OnActiveSessionChanged;
+            SubscribeToSessionRuleEvents(TraceSessionManager.GetActive());
+            TraceSessionManager.SessionsChanged += OnSessionsChanged;
+            TraceSessionManager.ActiveSessionChanged += OnActiveSessionChangedRefreshList;
             CustomColumnSet.ColumnsChanged += OnCustomColumnsChanged;
             ThemeManager.ThemeChanged += OnThemeChanged;
             Closed += (_, _) =>
             {
-                HighlightRuleSet.RulesChanged -= OnHighlightRulesChanged;
-                FilterRuleSet.FiltersChanged -= OnFilterRulesChanged;
+                TraceSessionManager.ActiveSessionChanged -= OnActiveSessionChanged;
+                UnsubscribeFromSessionRuleEvents(TraceSessionManager.GetActive());
+                TraceSessionManager.SessionsChanged -= OnSessionsChanged;
+                TraceSessionManager.ActiveSessionChanged -= OnActiveSessionChangedRefreshList;
                 CustomColumnSet.ColumnsChanged -= OnCustomColumnsChanged;
                 ThemeManager.ThemeChanged -= OnThemeChanged;
                 StopMiddleMouseAutoScroll();
                 _windowSource?.RemoveHook(WindowMessageHook);
             };
+
+            RefreshSessionsList();
+        }
+
+        private void OnSessionsChanged(object? sender, EventArgs e) => RefreshSessionsList();
+
+        private void OnActiveSessionChangedRefreshList(object? sender, TraceSession? newSession) => RefreshSessionsList();
+
+        private TraceSession? _ruleEventSubscribedSession;
+
+        private void SubscribeToSessionRuleEvents(TraceSession? session)
+        {
+            if (session is null)
+                return;
+            session.Highlights.RulesChanged += OnHighlightRulesChanged;
+            session.Filters.FiltersChanged += OnFilterRulesChanged;
+            _ruleEventSubscribedSession = session;
+        }
+
+        private void UnsubscribeFromSessionRuleEvents(TraceSession? session)
+        {
+            if (session is null)
+                return;
+            session.Highlights.RulesChanged -= OnHighlightRulesChanged;
+            session.Filters.FiltersChanged -= OnFilterRulesChanged;
+        }
+
+        private void OnActiveSessionChanged(object? sender, TraceSession? newSession)
+        {
+            UnsubscribeFromSessionRuleEvents(_ruleEventSubscribedSession);
+            _ruleEventSubscribedSession = null;
+            SubscribeToSessionRuleEvents(newSession);
         }
 
         /// <summary>
@@ -707,7 +748,9 @@ namespace HttpTraceAnalyser
 
         private void OnHighlightRulesChanged(object? sender, EventArgs e)
         {
-            _trace?.RecomputeHighlights();
+            var highlights = TraceSessionManager.GetActive()?.Highlights;
+            if (highlights is not null)
+                _trace?.RecomputeHighlights(highlights);
             // The Brush columns changed in-place; nudge the view to redraw.
             RequestList.Items.Refresh();
         }
@@ -744,7 +787,9 @@ namespace HttpTraceAnalyser
                 HighlightRuleSet.Rules.Remove(rule);
             }
 
-            _trace?.RefreshUserDefinedColumns();
+            var highlights = TraceSessionManager.GetActive()?.Highlights;
+            if (highlights is not null)
+                _trace?.RefreshUserDefinedColumns(highlights);
             RebuildUserDefinedGridColumns();
             ApplyFilter();
             RequestList.Items.Refresh();
@@ -1693,7 +1738,7 @@ namespace HttpTraceAnalyser
             return Math.Ceiling(header.DesiredSize.Width);
         }
 
-        private async void OpenFileButton_Click(object sender, RoutedEventArgs e)
+        private async void AddSessionButton_Click(object sender, RoutedEventArgs e)
         {
             var dialog = new Microsoft.Win32.OpenFileDialog
             {
@@ -1709,9 +1754,110 @@ namespace HttpTraceAnalyser
             if (dialog.ShowDialog() != true)
                 return;
 
-            var path = dialog.FileName;
+            await LoadTraceFileAsync(dialog.FileName).ConfigureAwait(true);
+        }
 
-            _loaderSummary = null;
+        /// <summary>Display row for the session explorer's <see cref="SessionsListBox"/>.</summary>
+        private sealed class SessionListItem
+        {
+            public required string Id { get; init; }
+            public required string Label { get; init; }
+            public required string Path { get; init; }
+            public required bool IsActive { get; init; }
+            public FontWeight IsActiveFontWeight => IsActive ? FontWeights.Bold : FontWeights.Normal;
+        }
+
+        private bool _updatingSessionsList;
+        private double _expandedExplorerWidth = 240;
+
+        private void CollapseExplorerButton_Click(object sender, RoutedEventArgs e)
+        {
+            ToggleSessionsExplorer();
+        }
+
+        private void ToggleSessionsExplorer()
+        {
+            bool isExpanded = SessionsExplorerPane.Visibility == Visibility.Visible;
+            if (isExpanded)
+            {
+                _expandedExplorerWidth = ExplorerColumn.Width.Value;
+                SessionsExplorerPane.Visibility = Visibility.Collapsed;
+                ExplorerColumn.Width = new GridLength(0);
+                ExplorerSplitterColumn.Width = new GridLength(0);
+                ExplorerRail.Visibility = Visibility.Visible;
+            }
+            else
+            {
+                ExplorerColumn.Width = new GridLength(_expandedExplorerWidth);
+                ExplorerSplitterColumn.Width = GridLength.Auto;
+                SessionsExplorerPane.Visibility = Visibility.Visible;
+                ExplorerRail.Visibility = Visibility.Collapsed;
+            }
+        }
+
+        private void RefreshSessionsList()
+        {
+            var activeId = TraceSessionManager.ActiveSessionId;
+            var items = TraceSessionManager.List()
+                .Select(s => new SessionListItem
+                {
+                    Id = s.Id,
+                    Label = s.Label,
+                    Path = s.Trace.FilePath,
+                    IsActive = string.Equals(s.Id, activeId, StringComparison.OrdinalIgnoreCase),
+                })
+                .ToList();
+
+            _updatingSessionsList = true;
+            try
+            {
+                SessionsListBox.ItemsSource = items;
+                SessionsListBox.SelectedItem = items.FirstOrDefault(i => i.IsActive);
+            }
+            finally
+            {
+                _updatingSessionsList = false;
+            }
+        }
+
+        private void SessionsListBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (_updatingSessionsList)
+                return;
+            if (SessionsListBox.SelectedItem is not SessionListItem item)
+                return;
+            if (string.Equals(item.Id, TraceSessionManager.ActiveSessionId, StringComparison.OrdinalIgnoreCase))
+                return;
+
+            SwitchToSession(item.Id);
+        }
+
+        private void CloseSessionButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (sender is not FrameworkElement { Tag: string sessionId })
+                return;
+
+            CloseSession(sessionId);
+        }
+
+        /// <summary>
+        /// Loads the trace file at <paramref name="path"/> from disk, registers it as a new
+        /// session, and shows it in the window (replacing any currently displayed trace).
+        /// Shared by the Open File dialog and external automation (e.g. the in-process MCP
+        /// server). Returns an error message on failure, or <c>null</c> on success.
+        /// </summary>
+        public Task<string?> LoadTraceFileAsync(string path) => LoadTraceFileAsync(path, sessionId: null, label: null, activate: true);
+
+        /// <summary>
+        /// Loads the trace file at <paramref name="path"/> from disk and registers it as a new
+        /// session under <paramref name="sessionId"/> (auto-generated when null) with the given
+        /// <paramref name="label"/> (defaults to the file name). When <paramref name="activate"/>
+        /// is true (the default), the trace is immediately shown in the window; otherwise it is
+        /// loaded into the background registry only. Returns an error message on failure, or
+        /// <c>null</c> on success.
+        /// </summary>
+        public async Task<string?> LoadTraceFileAsync(string path, string? sessionId, string? label, bool activate)
+        {
             SetBusy(true, $"Loading {Path.GetFileName(path)}...");
             HttpTraceFile? loaded = null;
             Exception? error = null;
@@ -1730,17 +1876,45 @@ namespace HttpTraceAnalyser
 
             if (error is not null)
             {
-                _trace = null;
                 MessageBox.Show(this, $"Failed to open trace file:\n{error.Message}",
                     "Open file", MessageBoxButton.OK, MessageBoxImage.Error);
-            }
-            else
-            {
-                _trace = loaded;
+                return error.Message;
             }
 
-            if (_trace is not null)
-                _loaderSummary = BuildLoaderSummary(_trace);
+            TraceSession session;
+            try
+            {
+                session = TraceSessionManager.Add(loaded!, sessionId, label);
+            }
+            catch (InvalidOperationException ex)
+            {
+                return ex.Message;
+            }
+
+            if (activate)
+                ShowTrace(session.Id, loaded!, session.Label);
+            return null;
+        }
+
+        /// <summary>
+        /// Displays an already-loaded trace (no disk I/O), refreshing the grid, viewers, tab
+        /// selection, and window title exactly as a fresh load would. Used both after a disk
+        /// load completes and when external automation switches which registered session is
+        /// currently shown.
+        /// </summary>
+        internal void ShowTrace(string sessionId, HttpTraceFile trace, string displayName)
+        {
+            // Activate first: PopulateList/ApplyFilter below resolve rules via the static
+            // FilterRuleSet/HighlightRuleSet façades, which read whichever session is currently
+            // active, so the switch must happen before anything that reads those façades.
+            TraceSessionManager.SetActive(sessionId);
+
+            var session = TraceSessionManager.Get(sessionId);
+            if (session is not null)
+                trace.RecomputeHighlights(session.Highlights);
+
+            _trace = trace;
+            _loaderSummary = BuildLoaderSummary(_trace);
 
             PopulateList();
             ClearViewers();
@@ -1748,9 +1922,61 @@ namespace HttpTraceAnalyser
                 TopLayoutTabControl.SelectedIndex = 0;
             else
                 MainTabControl.SelectedIndex = 0;
-            Title = _trace is null
-                ? "HTTP Trace Analyser"
-                : $"HTTP Trace Analyser - {Path.GetFileName(path)}";
+            Title = $"HTTP Trace Analyser - {displayName}";
+        }
+
+        /// <summary>Clears the window back to its no-trace-loaded state, e.g. after the active session is closed.</summary>
+        internal void ClearTrace()
+        {
+            _trace = null;
+            _loaderSummary = null;
+            PopulateList();
+            ClearViewers();
+            Title = "HTTP Trace Analyser";
+        }
+
+        /// <summary>
+        /// Switches to an already-loaded session by id (no disk I/O). Shared by the session
+        /// explorer panel's session list and the MCP <c>SwitchTraceSession</c> tool so both
+        /// surfaces behave identically. Returns a human-readable result message.
+        /// </summary>
+        public string SwitchToSession(string sessionId)
+        {
+            var session = TraceSessionManager.Get(sessionId);
+            if (session is null)
+                return $"Session '{sessionId}' was not found.";
+
+            ShowTrace(session.Id, session.Trace, session.Label);
+            return $"Now showing session '{session.Id}' - {session.Trace.FilePath} ({session.Trace.Count} messages).";
+        }
+
+        /// <summary>
+        /// Closes (unloads) a session by id, freeing its memory. If it was the active session,
+        /// automatically switches to another loaded session if one exists, otherwise clears the
+        /// viewer. Shared by the session explorer panel's close button and the MCP
+        /// <c>CloseTraceSession</c> tool. Returns a human-readable result message.
+        /// </summary>
+        public string CloseSession(string sessionId)
+        {
+            var session = TraceSessionManager.Get(sessionId);
+            if (session is null)
+                return $"Session '{sessionId}' was not found.";
+
+            bool wasActive = string.Equals(TraceSessionManager.ActiveSessionId, sessionId, StringComparison.OrdinalIgnoreCase);
+            TraceSessionManager.Remove(sessionId);
+
+            if (!wasActive)
+                return $"Closed session '{sessionId}'.";
+
+            var next = TraceSessionManager.List().LastOrDefault();
+            if (next is not null)
+            {
+                ShowTrace(next.Id, next.Trace, next.Label);
+                return $"Closed session '{sessionId}' (was active). Now showing session '{next.Id}'.";
+            }
+
+            ClearTrace();
+            return $"Closed session '{sessionId}' (was active). No other sessions remain; viewer cleared.";
         }
 
         private void SetBusy(bool busy, string? message = null)
@@ -1765,7 +1991,7 @@ namespace HttpTraceAnalyser
             {
                 BusyOverlay.Visibility = Visibility.Collapsed;
             }
-            OpenFileButton.IsEnabled = !busy;
+            AddSessionButton.IsEnabled = !busy;
         }
 
         /// <summary>
@@ -2740,7 +2966,8 @@ namespace HttpTraceAnalyser
             return PayloadFormat.PlainText;
         }
 
-        private static string DecodePayloadText(byte[] payload, IReadOnlyList<KeyValuePair<string, string>>? headers)
+        /// <summary>Decodes a payload to text using its Content-Type charset (defaulting to UTF-8). Internal for reuse by the MCP tools.</summary>
+        internal static string DecodePayloadText(byte[] payload, IReadOnlyList<KeyValuePair<string, string>>? headers)
         {
             var encoding = Encoding.UTF8;
             if (headers is not null)

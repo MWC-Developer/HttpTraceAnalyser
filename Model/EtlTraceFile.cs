@@ -55,10 +55,10 @@ namespace HttpTraceAnalyser.Model
 
         public EtlTraceFile(string filePath) : base(filePath)
         {
-            Load(filePath);
+            LoadEvents(filePath);
         }
 
-        private void Load(string filePath)
+        private void LoadEvents(string filePath)
         {
             using var source = new ETWTraceEventSource(filePath);
             var pending = new Dictionary<Guid, PendingRequest>();

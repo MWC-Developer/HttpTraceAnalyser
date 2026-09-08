@@ -261,12 +261,11 @@ namespace HttpTraceAnalyser.Model
 
             PopulateUserDefinedColumns(row, request.Headers, response?.Headers);
 
-            ApplyHighlight(row);
             _messages.Rows.Add(row);
         }
 
-        /// <summary>Rebuilds mutable user-defined columns and values on the loaded trace.</summary>
-        public void RefreshUserDefinedColumns()
+        /// <summary>Rebuilds mutable user-defined columns and values on the loaded trace, then re-evaluates the given highlight rules.</summary>
+        public void RefreshUserDefinedColumns(HighlightRuleCollection rules)
         {
             var definitions = CustomColumnSet.Columns
                 .Where(column => !string.IsNullOrWhiteSpace(column.Name))
@@ -299,7 +298,7 @@ namespace HttpTraceAnalyser.Model
                 PopulateUserDefinedColumns(row, requestHeaders, responseHeaders);
             }
 
-            RecomputeHighlights();
+            RecomputeHighlights(rules);
         }
 
         private static void AddUserDefinedColumns(DataTable table)
@@ -360,21 +359,21 @@ namespace HttpTraceAnalyser.Model
             return true;
         }
 
-        /// <summary>Re-evaluates highlight rules against every row.</summary>
-        public void RecomputeHighlights()
+        /// <summary>Re-evaluates highlight rules against every row using the given rule collection (typically the owning session's <see cref="TraceSession.Highlights"/>).</summary>
+        public void RecomputeHighlights(HighlightRuleCollection rules)
         {
             foreach (DataRow row in _messages.Rows)
             {
                 if (row.RowState is DataRowState.Deleted or DataRowState.Detached)
                     continue;
-                ApplyHighlight(row);
+                ApplyHighlight(row, rules);
             }
         }
 
-        private static void ApplyHighlight(DataRow row)
+        private static void ApplyHighlight(DataRow row, HighlightRuleCollection rules)
         {
-            row[TraceDataSchema.RowBackground] = (object?)HighlightRuleSet.GetBackground(row) ?? DBNull.Value;
-            row[TraceDataSchema.RowForeground] = (object?)HighlightRuleSet.GetForeground(row) ?? DBNull.Value;
+            row[TraceDataSchema.RowBackground] = (object?)rules.GetBackground(row) ?? DBNull.Value;
+            row[TraceDataSchema.RowForeground] = (object?)rules.GetForeground(row) ?? DBNull.Value;
         }
 
         /// <summary>Rebuilds an <see cref="HttpRequest"/> from the given row.</summary>

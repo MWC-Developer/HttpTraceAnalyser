@@ -40,7 +40,7 @@ namespace HttpTraceAnalyser.Model
         public EwsTraceFile(string filePath) : base(filePath)
         {
             var content = File.ReadAllText(filePath);
-            Load(content);
+            LoadContent(content);
         }
 
         /// <summary>
@@ -78,7 +78,7 @@ namespace HttpTraceAnalyser.Model
             public bool HasRequestHeaders;
         }
 
-        private void Load(string content)
+        private void LoadContent(string content)
         {
             var pendingByTid = new Dictionary<string, PendingExchange>(StringComparer.Ordinal);
 

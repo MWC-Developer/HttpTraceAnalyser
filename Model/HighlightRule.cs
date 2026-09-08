@@ -214,21 +214,26 @@ namespace HttpTraceAnalyser.Model
     }
 
     /// <summary>Central store of highlight rules; evaluated in order (first match wins).</summary>
-    public static class HighlightRuleSet
+    /// <summary>
+    /// Holds a session's active highlight rules, evaluated in order (first match wins). Each
+    /// loaded trace session owns its own independent instance (see
+    /// <see cref="TraceSession.Highlights"/>) so highlight rules on one trace never affect another.
+    /// </summary>
+    public sealed class HighlightRuleCollection
     {
-        private static bool _suppressNotifications;
+        private bool _suppressNotifications;
 
-        public static ObservableCollection<HighlightRule> Rules { get; } = new();
+        public ObservableCollection<HighlightRule> Rules { get; } = new();
 
-        public static event EventHandler? RulesChanged;
+        public event EventHandler? RulesChanged;
 
-        static HighlightRuleSet()
+        public HighlightRuleCollection()
         {
             Rules.CollectionChanged += OnCollectionChanged;
             ResetToDefault();
         }
 
-        public static void ResetToDefault()
+        public void ResetToDefault()
         {
             if (System.IO.File.Exists(RulePersistence.HighlightDefaultPath))
             {
@@ -247,7 +252,7 @@ namespace HttpTraceAnalyser.Model
         }
 
         /// <summary>Replaces the active rules with the given set, e.g. after a dialog commits its draft.</summary>
-        public static void Replace(System.Collections.Generic.IEnumerable<HighlightRule> rules) => ReplaceRules(rules);
+        public void Replace(System.Collections.Generic.IEnumerable<HighlightRule> rules) => ReplaceRules(rules);
 
         /// <summary>Returns the saved default rules, or the built-in factory defaults if none are saved, without applying them.</summary>
         internal static List<HighlightRule> GetSavedDefaultOrFactory()
@@ -296,7 +301,7 @@ namespace HttpTraceAnalyser.Model
             },
         ];
 
-        private static void ReplaceRules(IEnumerable<HighlightRule> rules)
+        private void ReplaceRules(IEnumerable<HighlightRule> rules)
         {
             _suppressNotifications = true;
             try
@@ -312,7 +317,7 @@ namespace HttpTraceAnalyser.Model
             RaiseChanged();
         }
 
-        private static void OnCollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
+        private void OnCollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
         {
             if (e.OldItems is not null)
             {
@@ -329,16 +334,16 @@ namespace HttpTraceAnalyser.Model
             RaiseChanged();
         }
 
-        private static void OnRulePropertyChanged(object? sender, PropertyChangedEventArgs e) => RaiseChanged();
+        private void OnRulePropertyChanged(object? sender, PropertyChangedEventArgs e) => RaiseChanged();
 
-        private static void RaiseChanged()
+        private void RaiseChanged()
         {
             if (!_suppressNotifications)
-                RulesChanged?.Invoke(null, EventArgs.Empty);
+                RulesChanged?.Invoke(this, EventArgs.Empty);
         }
 
         /// <summary>Finds the first enabled rule that matches the given item; null if none.</summary>
-        public static HighlightRule? Match(object? item)
+        public HighlightRule? Match(object? item)
         {
             if (item is null)
                 return null;
@@ -355,7 +360,7 @@ namespace HttpTraceAnalyser.Model
             return null;
         }
 
-        public static Brush? GetBackground(object? item)
+        public Brush? GetBackground(object? item)
         {
             var rule = Match(item);
             if (rule is null)
@@ -366,7 +371,7 @@ namespace HttpTraceAnalyser.Model
             return brush;
         }
 
-        public static Brush? GetForeground(object? item)
+        public Brush? GetForeground(object? item)
         {
             var rule = Match(item);
             if (rule?.ForegroundColor is null)
@@ -403,5 +408,45 @@ namespace HttpTraceAnalyser.Model
             var value = row[columnName];
             return value is DBNull ? null : value;
         }
+    }
+
+    /// <summary>
+    /// Central static façade over the currently active trace session's <see cref="HighlightRuleCollection"/>
+    /// (see <see cref="TraceSessionManager.GetActive"/>). Existing callers keep using this static class
+    /// exactly as before; it now transparently forwards to whichever session is shown, or a standalone
+    /// fallback instance when no session is loaded (e.g. at application startup).
+    /// </summary>
+    public static class HighlightRuleSet
+    {
+        private static readonly HighlightRuleCollection FallbackCollection = new();
+
+        private static HighlightRuleCollection Current
+            => TraceSessionManager.GetActive()?.Highlights ?? FallbackCollection;
+
+        public static ObservableCollection<HighlightRule> Rules => Current.Rules;
+
+        public static event EventHandler? RulesChanged
+        {
+            add => Current.RulesChanged += value;
+            remove => Current.RulesChanged -= value;
+        }
+
+        public static void ResetToDefault() => Current.ResetToDefault();
+
+        /// <summary>Replaces the active rules with the given set, e.g. after a dialog commits its draft.</summary>
+        public static void Replace(System.Collections.Generic.IEnumerable<HighlightRule> rules) => Current.Replace(rules);
+
+        /// <summary>Returns the saved default rules, or the built-in factory defaults if none are saved, without applying them.</summary>
+        internal static List<HighlightRule> GetSavedDefaultOrFactory() => HighlightRuleCollection.GetSavedDefaultOrFactory();
+
+        /// <summary>Returns the built-in factory default rules without applying them.</summary>
+        internal static List<HighlightRule> GetFactoryDefaults() => HighlightRuleCollection.GetFactoryDefaults();
+
+        /// <summary>Finds the first enabled rule that matches the given item; null if none.</summary>
+        public static HighlightRule? Match(object? item) => Current.Match(item);
+
+        public static Brush? GetBackground(object? item) => Current.GetBackground(item);
+
+        public static Brush? GetForeground(object? item) => Current.GetForeground(item);
     }
 }
