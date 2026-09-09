@@ -13,10 +13,10 @@ namespace HttpTraceAnalyser.Model
         public required DateTimeOffset LoadedAt { get; init; }
 
         /// <summary>This session's own active filter rules, independent of every other loaded session.</summary>
-        public FilterRuleCollection Filters { get; } = new();
+        public FilterRuleCollection Filters { get; init; } = new();
 
         /// <summary>This session's own active highlight rules, independent of every other loaded session.</summary>
-        public HighlightRuleCollection Highlights { get; } = new();
+        public HighlightRuleCollection Highlights { get; init; } = new();
     }
 
     /// <summary>
@@ -43,7 +43,14 @@ namespace HttpTraceAnalyser.Model
         /// <paramref name="requestedId"/> is null/empty, an id of the form "trace1", "trace2", ...
         /// is generated. Throws if <paramref name="requestedId"/> is already in use.
         /// </summary>
-        public static TraceSession Add(HttpTraceFile trace, string? requestedId, string? label)
+        /// <param name="loadDefaultRules">
+        /// When true (the default), the session's filter/highlight rules start from the saved
+        /// default (or built-in factory default), matching the UI's normal Open-file behavior.
+        /// When false, both start empty - used for traces loaded via MCP, where the client is
+        /// expected to set up its own filter/highlight rules explicitly rather than inherit
+        /// whatever the user last configured in the UI.
+        /// </param>
+        public static TraceSession Add(HttpTraceFile trace, string? requestedId, string? label, bool loadDefaultRules = true)
         {
             if (trace is null)
                 throw new ArgumentNullException(nameof(trace));
@@ -70,6 +77,8 @@ namespace HttpTraceAnalyser.Model
                 Label = string.IsNullOrWhiteSpace(label) ? System.IO.Path.GetFileName(trace.FilePath) : label,
                 Trace = trace,
                 LoadedAt = DateTimeOffset.Now,
+                Filters = new FilterRuleCollection(loadSavedDefault: loadDefaultRules),
+                Highlights = new HighlightRuleCollection(loadSavedDefault: loadDefaultRules),
             };
             Sessions[id] = session;
             SessionsChanged?.Invoke(null, EventArgs.Empty);

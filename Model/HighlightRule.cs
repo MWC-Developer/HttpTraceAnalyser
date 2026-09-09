@@ -227,10 +227,11 @@ namespace HttpTraceAnalyser.Model
 
         public event EventHandler? RulesChanged;
 
-        public HighlightRuleCollection()
+        public HighlightRuleCollection(bool loadSavedDefault = true)
         {
             Rules.CollectionChanged += OnCollectionChanged;
-            ResetToDefault();
+            if (loadSavedDefault)
+                ResetToDefault();
         }
 
         public void ResetToDefault()

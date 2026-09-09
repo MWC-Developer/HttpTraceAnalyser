@@ -226,10 +226,10 @@ namespace HttpTraceAnalyser.Model
 
         public event EventHandler? FiltersChanged;
 
-        public FilterRuleCollection()
+        public FilterRuleCollection(bool loadSavedDefault = true)
         {
             Rules.CollectionChanged += OnCollectionChanged;
-            if (System.IO.File.Exists(RulePersistence.FilterDefaultPath))
+            if (loadSavedDefault && System.IO.File.Exists(RulePersistence.FilterDefaultPath))
             {
                 try
                 {

@@ -1846,7 +1846,7 @@ namespace HttpTraceAnalyser
         /// Shared by the Open File dialog and external automation (e.g. the in-process MCP
         /// server). Returns an error message on failure, or <c>null</c> on success.
         /// </summary>
-        public Task<string?> LoadTraceFileAsync(string path) => LoadTraceFileAsync(path, sessionId: null, label: null, activate: true);
+        public Task<string?> LoadTraceFileAsync(string path) => LoadTraceFileAsync(path, sessionId: null, label: null, activate: true, loadDefaultRules: true);
 
         /// <summary>
         /// Loads the trace file at <paramref name="path"/> from disk and registers it as a new
@@ -1856,7 +1856,7 @@ namespace HttpTraceAnalyser
         /// loaded into the background registry only. Returns an error message on failure, or
         /// <c>null</c> on success.
         /// </summary>
-        public async Task<string?> LoadTraceFileAsync(string path, string? sessionId, string? label, bool activate)
+        public async Task<string?> LoadTraceFileAsync(string path, string? sessionId, string? label, bool activate, bool loadDefaultRules = true)
         {
             SetBusy(true, $"Loading {Path.GetFileName(path)}...");
             HttpTraceFile? loaded = null;
@@ -1884,7 +1884,7 @@ namespace HttpTraceAnalyser
             TraceSession session;
             try
             {
-                session = TraceSessionManager.Add(loaded!, sessionId, label);
+                session = TraceSessionManager.Add(loaded!, sessionId, label, loadDefaultRules);
             }
             catch (InvalidOperationException ex)
             {

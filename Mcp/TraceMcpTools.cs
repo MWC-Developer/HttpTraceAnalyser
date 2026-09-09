@@ -61,7 +61,7 @@ namespace HttpTraceAnalyser.Mcp
             }
         }
 
-        [McpServerTool, Description("Loads an HTTP trace file (.saz, .har, .etl, .trace, .log, or .txt) from disk as a new session. By default replaces the currently shown trace (matching prior behavior); pass sessionId/label and activate=false to load additional traces in the background for later comparison (see ListTraceSessions, SwitchTraceSession, DiffTraces). Returns a summary on success or an error message on failure.")]
+        [McpServerTool, Description("Loads an HTTP trace file (.saz, .har, .etl, .trace, .log, or .txt) from disk as a new session. By default replaces the currently shown trace (matching prior behavior); pass sessionId/label and activate=false to load additional traces in the background for later comparison (see ListTraceSessions, SwitchTraceSession, DiffTraces). Sessions loaded this way start with no filter or highlight rules (rather than the UI's saved defaults) since the client is expected to configure those explicitly via FilterTrace/HighlightTrace. Returns a summary on success or an error message on failure.")]
         public static async Task<string> LoadTraceFile(
             [Description("Full path to the trace file to load.")] string path,
             [Description("Optional session id to register the trace under (e.g. 'good', 'bad'). Auto-generated (trace1, trace2, ...) when omitted. Must be unique among currently loaded sessions.")] string? sessionId = null,
@@ -81,7 +81,7 @@ namespace HttpTraceAnalyser.Mcp
                 if (!File.Exists(path))
                     return $"File not found: {path}";
 
-                var error = await window.Dispatcher.InvokeAsync(() => window.LoadTraceFileAsync(path, sessionId, label, activate)).Task.Unwrap().ConfigureAwait(false);
+                var error = await window.Dispatcher.InvokeAsync(() => window.LoadTraceFileAsync(path, sessionId, label, activate, loadDefaultRules: false)).Task.Unwrap().ConfigureAwait(false);
                 if (error is not null)
                     return $"Failed to load trace file '{path}': {error}";
 
