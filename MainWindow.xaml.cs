@@ -80,6 +80,15 @@ namespace HttpTraceAnalyser
         private bool _requestTabEverActivated;
         private bool _responseTabEverActivated;
 
+        // Large payloads skip pretty-printing/word-wrap/highlighting for performance (see
+        // LargePayloadThreshold). These track actual size and whether the user chose to
+        // force full formatting anyway (which also disables Find for that payload, since
+        // formatting+highlighting a huge body reintroduces the same slowness Find just fixed).
+        private bool _requestPayloadIsLarge;
+        private bool _responsePayloadIsLarge;
+        private bool _requestPayloadFormatOverride;
+        private bool _responsePayloadFormatOverride;
+
         // Track if we're currently switching tabs to prevent re-entrancy
         private bool _isHandlingTabSwitch;
 
@@ -100,6 +109,12 @@ namespace HttpTraceAnalyser
         private Cursor? _previousOverrideCursor;
         private HwndSource? _windowSource;
         private const int WmMouseHorizontalWheel = 0x020E;
+
+        // Above this size, pretty-printing, word-wrap, line numbers and syntax highlighting are
+        // skipped: colorizing (and word-wrapping) a huge single-line JSON/XML body is what makes
+        // scrolling/selecting (e.g. via Find) feel terrible, since it re-runs regex highlighting
+        // rules over the whole line on every redraw.
+        private const int LargePayloadThreshold = 100_000; // 100KB
 
         public MainWindow()
         {
@@ -338,8 +353,14 @@ namespace HttpTraceAnalyser
 
         private void OpenLocalFind(FindScope scope)
         {
+            // Formatting a large payload anyway disables Find for it (see IsFindBlocked) -
+            // don't even show the find bar in that case.
+            if (IsFindBlocked(scope))
+                return;
+
             var (bar, searchBox, _) = GetLocalFindControls(scope);
             bar.Visibility = Visibility.Visible;
+            searchBox.IsEnabled = true;
             searchBox.Focus();
             searchBox.SelectAll();
         }
@@ -388,6 +409,12 @@ namespace HttpTraceAnalyser
         private async Task FindLocalAsync(FindScope scope, bool forward)
         {
             var (_, searchBox, status) = GetLocalFindControls(scope);
+            if (IsFindBlocked(scope))
+            {
+                status.Text = "Find disabled for this large, fully formatted payload";
+                return;
+            }
+
             var searchText = searchBox.Text;
             if (string.IsNullOrWhiteSpace(searchText))
             {
@@ -440,6 +467,16 @@ namespace HttpTraceAnalyser
         private static bool TryGetFindScope(object sender, out FindScope scope)
             => Enum.TryParse((sender as FrameworkElement)?.Tag as string, out scope)
                && scope != FindScope.AllSessions;
+
+        // Formatting a large payload anyway (see "Format anyway") re-enables word wrap and
+        // syntax highlighting, which reintroduces the slow scroll/select behavior Find relies
+        // on - so Find is disabled for that payload in exchange for full formatting.
+        private bool IsFindBlocked(FindScope scope) => scope switch
+        {
+            FindScope.RequestBody => _requestPayloadIsLarge && _requestPayloadFormatOverride,
+            FindScope.ResponseBody => _responsePayloadIsLarge && _responsePayloadFormatOverride,
+            _ => false,
+        };
 
         private void FocusFindTarget(FindScope scope)
         {
@@ -547,6 +584,12 @@ namespace HttpTraceAnalyser
                 return;
             }
 
+            if (IsFindBlocked(scope))
+            {
+                FindSessionsStatus.Text = "Find disabled for this large, fully formatted payload";
+                return;
+            }
+
             var searchText = FindSessionsText.Text;
             if (string.IsNullOrWhiteSpace(searchText))
             {
@@ -633,8 +676,12 @@ namespace HttpTraceAnalyser
 
             textBox.Focus();
             textBox.Select(index, searchText.Length);
-            CenterTextMatch(textBox, index, searchText.Length);
             status.Text = "Match found";
+
+            // Deferred: WPF scrolls the caret into view (edge, not centered) in response to
+            // Select()/Focus(), which would otherwise run after and undo an immediate centering call.
+            textBox.Dispatcher.BeginInvoke(DispatcherPriority.ContextIdle,
+                new Action(() => CenterTextMatch(textBox, index, searchText.Length)));
         }
 
         private static void SelectTextMatch(ICSharpCode.AvalonEdit.TextEditor editor, string searchText, bool forward, TextBlock status)
@@ -648,8 +695,12 @@ namespace HttpTraceAnalyser
 
             editor.Focus();
             editor.Select(index, searchText.Length);
-            CenterTextMatch(editor, index, searchText.Length);
             status.Text = "Match found";
+
+            // Deferred: AvalonEdit scrolls the caret into view (edge, not centered) in response to
+            // Select()/Focus(), which would otherwise run after and undo an immediate centering call.
+            editor.Dispatcher.BeginInvoke(DispatcherPriority.ContextIdle,
+                new Action(() => CenterTextMatch(editor, index, searchText.Length)));
         }
 
         private static void CenterTextMatch(TextBox textBox, int index, int length)
@@ -693,10 +744,10 @@ namespace HttpTraceAnalyser
                 ? (start.X + end.X) / 2
                 : start.X;
 
-            scrollInfo.SetHorizontalOffset(Math.Max(0,
-                scrollInfo.HorizontalOffset + centerX - scrollInfo.ViewportWidth / 2));
-            scrollInfo.SetVerticalOffset(Math.Max(0,
-                scrollInfo.VerticalOffset + start.Y - scrollInfo.ViewportHeight / 2));
+            // GetVisualPosition returns document-absolute coordinates (already independent of the
+            // current scroll position), so the new offset must not add the existing offset on top.
+            scrollInfo.SetHorizontalOffset(Math.Max(0, centerX - scrollInfo.ViewportWidth / 2));
+            scrollInfo.SetVerticalOffset(Math.Max(0, start.Y - scrollInfo.ViewportHeight / 2));
         }
 
         private static int FindTextIndex(string text, string searchText, int selectionStart, int selectionLength, bool forward)
@@ -2198,6 +2249,12 @@ namespace HttpTraceAnalyser
             _requestHeaders = null;
             _responsePayload = null;
             _responseHeaders = null;
+            _requestPayloadIsLarge = false;
+            _responsePayloadIsLarge = false;
+            _requestPayloadFormatOverride = false;
+            _responsePayloadFormatOverride = false;
+            UpdateLargePayloadBanner(request: true);
+            UpdateLargePayloadBanner(request: false);
 
             RequestHeadersText.Text = string.Empty;
             ApplyRequestPayloadLayout(hasPayload: false);
@@ -2346,6 +2403,10 @@ namespace HttpTraceAnalyser
 
             HttpRequest request = _trace.GetRequest(drv.Row);
             HttpResponse? response = _trace.GetResponse(drv.Row);
+
+            // A "Format anyway" override only applies to the payload it was requested for.
+            _requestPayloadFormatOverride = false;
+            _responsePayloadFormatOverride = false;
 
             // Threshold for showing busy indicator (1MB) - same as in RenderPayload
             const int BusyIndicatorThreshold = 1_048_576;
@@ -2630,6 +2691,7 @@ namespace HttpTraceAnalyser
             // Ignore during population - format is set programmatically, not by user
             if (_isPopulatingViewers || _requestPayload is null)
                 return;
+            _requestPayloadFormatOverride = false;
             await RenderRequestPayload((PayloadFormat)RequestPayloadFormatCombo.SelectedIndex);
         }
 
@@ -2638,31 +2700,40 @@ namespace HttpTraceAnalyser
             // Ignore during population - format is set programmatically, not by user
             if (_isPopulatingViewers || _responsePayload is null)
                 return;
+            _responsePayloadFormatOverride = false;
             await RenderResponsePayload((PayloadFormat)ResponsePayloadFormatCombo.SelectedIndex);
         }
 
-        private Task RenderRequestPayload(PayloadFormat format, bool showBusyIndicator = true)
-            => RenderPayload(format, _requestPayload!, _requestHeaders,
+        private async Task RenderRequestPayload(PayloadFormat format, bool showBusyIndicator = true, bool forceFullRender = false)
+        {
+            _requestPayloadIsLarge = await RenderPayload(format, _requestPayload!, _requestHeaders,
                 RequestPayloadEditor, RequestPayloadImageScroll, RequestPayloadImage,
-                RequestPayloadSvgScroll, RequestPayloadSvg, showBusyIndicator);
+                RequestPayloadSvgScroll, RequestPayloadSvg, showBusyIndicator, forceFullRender);
+            UpdateLargePayloadBanner(request: true);
+        }
 
-        private Task RenderResponsePayload(PayloadFormat format, bool showBusyIndicator = true)
-            => RenderPayload(format, _responsePayload!, _responseHeaders,
+        private async Task RenderResponsePayload(PayloadFormat format, bool showBusyIndicator = true, bool forceFullRender = false)
+        {
+            _responsePayloadIsLarge = await RenderPayload(format, _responsePayload!, _responseHeaders,
                 ResponsePayloadEditor, ResponsePayloadImageScroll, ResponsePayloadImage,
-                ResponsePayloadSvgScroll, ResponsePayloadSvg, showBusyIndicator);
+                ResponsePayloadSvgScroll, ResponsePayloadSvg, showBusyIndicator, forceFullRender);
+            UpdateLargePayloadBanner(request: false);
+        }
 
-        private async Task RenderPayload(
+        private async Task<bool> RenderPayload(
             PayloadFormat format,
             byte[] payload,
             IReadOnlyList<KeyValuePair<string, string>>? headers,
             ICSharpCode.AvalonEdit.TextEditor editor,
             ScrollViewer imageScroll, Image imageControl,
             ScrollViewer svgScroll, SvgViewbox svgControl,
-            bool showBusyIndicator = true)
+            bool showBusyIndicator = true,
+            bool forceFullRender = false)
         {
             // Threshold for showing busy indicator (1MB)
             const int BusyIndicatorThreshold = 1_048_576;
             bool shouldShowBusy = showBusyIndicator && payload.Length >= BusyIndicatorThreshold;
+            bool isLargeFile = false;
 
             try
             {
@@ -2679,7 +2750,7 @@ namespace HttpTraceAnalyser
                     ShowEditor(editor, imageScroll, svgScroll);
                     editor.Text = string.Empty;
                     editor.SyntaxHighlighting = null;
-                    return;
+                    return false;
                 }
 
                 switch (format)
@@ -2696,7 +2767,7 @@ namespace HttpTraceAnalyser
                             editor.Text = $"[Unable to decode as image: {payload.Length} byte(s)]";
                             editor.SyntaxHighlighting = null;
                         }
-                        return;
+                        return false;
 
                     case PayloadFormat.Svg:
                         if (TryLoadSvg(payload, svgControl))
@@ -2709,7 +2780,7 @@ namespace HttpTraceAnalyser
                             editor.Text = $"[Unable to decode as SVG: {payload.Length} byte(s)]";
                             editor.SyntaxHighlighting = null;
                         }
-                        return;
+                        return false;
                 }
 
                 // Text-based formats route through the AvalonEdit editor.
@@ -2729,9 +2800,10 @@ namespace HttpTraceAnalyser
                 // Set text immediately WITHOUT syntax highlighting to show content right away
                 editor.SyntaxHighlighting = null;
 
-                // For very large files, skip pretty-printing as it's slow and disable word wrap
-                const int LargeFileThreshold = 100_000; // 100KB
-                bool isLargeFile = text.Length > LargeFileThreshold;
+                // For very large files, skip pretty-printing as it's slow and disable word wrap,
+                // unless the user explicitly asked to format anyway (forceFullRender).
+                isLargeFile = text.Length > LargePayloadThreshold;
+                bool skipLargeFileOptimizations = isLargeFile && !forceFullRender;
 
                 // Pretty-print on background thread for large files
                 string displayText;
@@ -2742,9 +2814,9 @@ namespace HttpTraceAnalyser
                         switch (format)
                         {
                             case PayloadFormat.Json:
-                                return isLargeFile ? text : (TryPrettyPrintJson(text, out var pretty) ? pretty : text);
+                                return skipLargeFileOptimizations ? text : (TryPrettyPrintJson(text, out var pretty) ? pretty : text);
                             case PayloadFormat.Xml:
-                                return isLargeFile ? text : (TryPrettyPrintXml(text, out var xml) ? xml : text);
+                                return skipLargeFileOptimizations ? text : (TryPrettyPrintXml(text, out var xml) ? xml : text);
                             default:
                                 return text;
                         }
@@ -2755,10 +2827,10 @@ namespace HttpTraceAnalyser
                     switch (format)
                     {
                         case PayloadFormat.Json:
-                            displayText = isLargeFile ? text : (TryPrettyPrintJson(text, out var pretty) ? pretty : text);
+                            displayText = skipLargeFileOptimizations ? text : (TryPrettyPrintJson(text, out var pretty) ? pretty : text);
                             break;
                         case PayloadFormat.Xml:
-                            displayText = isLargeFile ? text : (TryPrettyPrintXml(text, out var xml) ? xml : text);
+                            displayText = skipLargeFileOptimizations ? text : (TryPrettyPrintXml(text, out var xml) ? xml : text);
                             break;
                         default:
                             displayText = text;
@@ -2767,7 +2839,7 @@ namespace HttpTraceAnalyser
                 }
 
                 // For large files, disable performance-intensive features
-                if (isLargeFile)
+                if (skipLargeFileOptimizations)
                 {
                     editor.WordWrap = false;
                     editor.ShowLineNumbers = false; // Line numbers are expensive with many lines
@@ -2805,8 +2877,13 @@ namespace HttpTraceAnalyser
                     editor.Text = displayText;
                 }
 
-                // Apply syntax highlighting asynchronously on background thread to avoid UI freeze
-                ApplySyntaxHighlightingAsync(editor, format);
+                // Apply syntax highlighting asynchronously on background thread to avoid UI freeze.
+                // Skipped for large files: colorizing a huge (often single-line) body makes every
+                // subsequent scroll/select - including Find navigation - extremely slow.
+                if (!skipLargeFileOptimizations)
+                {
+                    ApplySyntaxHighlightingAsync(editor, format);
+                }
             }
             finally
             {
@@ -2815,6 +2892,53 @@ namespace HttpTraceAnalyser
                     SetBusy(false);
                 }
             }
+
+            return isLargeFile;
+        }
+
+        /// <summary>
+        /// Shows/hides the "large payload" banner for the given side and switches its message
+        /// between the "format anyway" offer and the "Find is disabled" notice once formatted.
+        /// </summary>
+        private void UpdateLargePayloadBanner(bool request)
+        {
+            var banner = request ? RequestBodyLargePayloadBanner : ResponseBodyLargePayloadBanner;
+            var message = request ? RequestBodyLargePayloadMessage : ResponseBodyLargePayloadMessage;
+            var button = request ? RequestBodyFormatAnywayButton : ResponseBodyFormatAnywayButton;
+            var isLarge = request ? _requestPayloadIsLarge : _responsePayloadIsLarge;
+            var overrideActive = request ? _requestPayloadFormatOverride : _responsePayloadFormatOverride;
+
+            if (!isLarge)
+            {
+                banner.Visibility = Visibility.Collapsed;
+                return;
+            }
+
+            banner.Visibility = Visibility.Visible;
+            if (overrideActive)
+            {
+                message.Text = "This payload is fully formatted for readability. Find is disabled here - it would be slow on a payload this large.";
+                button.Content = "Show unformatted";
+            }
+            else
+            {
+                message.Text = "Large payload: formatting, word wrap and syntax highlighting are disabled for performance.";
+                button.Content = "Format anyway";
+            }
+        }
+
+        private async void RequestFormatAnywayButton_Click(object sender, RoutedEventArgs e)
+        {
+            _requestPayloadFormatOverride = !_requestPayloadFormatOverride;
+            CloseLocalFind(FindScope.RequestBody);
+            await RenderRequestPayload((PayloadFormat)RequestPayloadFormatCombo.SelectedIndex, forceFullRender: _requestPayloadFormatOverride);
+        }
+
+        private async void ResponseFormatAnywayButton_Click(object sender, RoutedEventArgs e)
+        {
+            _responsePayloadFormatOverride = !_responsePayloadFormatOverride;
+            CloseLocalFind(FindScope.ResponseBody);
+            await RenderResponsePayload((PayloadFormat)ResponsePayloadFormatCombo.SelectedIndex, forceFullRender: _responsePayloadFormatOverride);
         }
 
         /// <summary>
@@ -2850,8 +2974,8 @@ namespace HttpTraceAnalyser
         /// </summary>
         private void ReapplySyntaxHighlighting()
         {
-            // Reapply highlighting to request payload editor if it has text
-            if (!string.IsNullOrEmpty(RequestPayloadEditor.Text))
+            // Reapply highlighting to request payload editor if it has text (skip large payloads - see LargePayloadThreshold)
+            if (!string.IsNullOrEmpty(RequestPayloadEditor.Text) && RequestPayloadEditor.Text.Length <= LargePayloadThreshold)
             {
                 var requestFormat = (PayloadFormat)RequestPayloadFormatCombo.SelectedIndex;
                 if (requestFormat is PayloadFormat.Json or PayloadFormat.Xml or PayloadFormat.Html or PayloadFormat.JavaScript)
@@ -2860,8 +2984,8 @@ namespace HttpTraceAnalyser
                 }
             }
 
-            // Reapply highlighting to response payload editor if it has text
-            if (!string.IsNullOrEmpty(ResponsePayloadEditor.Text))
+            // Reapply highlighting to response payload editor if it has text (skip large payloads - see LargePayloadThreshold)
+            if (!string.IsNullOrEmpty(ResponsePayloadEditor.Text) && ResponsePayloadEditor.Text.Length <= LargePayloadThreshold)
             {
                 var responseFormat = (PayloadFormat)ResponsePayloadFormatCombo.SelectedIndex;
                 if (responseFormat is PayloadFormat.Json or PayloadFormat.Xml or PayloadFormat.Html or PayloadFormat.JavaScript)
