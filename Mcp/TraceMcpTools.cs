@@ -78,6 +78,11 @@ namespace HttpTraceAnalyser.Mcp
                 if (string.IsNullOrWhiteSpace(path))
                     return "path must not be empty.";
 
+                var (resolvedPath, validationError) = ResolveTraceFilePath(path);
+                if (validationError is not null)
+                    return validationError;
+                path = resolvedPath!;
+
                 if (!File.Exists(path))
                     return $"File not found: {path}";
 
@@ -161,6 +166,44 @@ namespace HttpTraceAnalyser.Mcp
             {
                 ToolLock.Release();
             }
+        }
+
+        /// <summary>
+        /// Extensions accepted by <see cref="LoadTraceFile"/>. Every tool argument is treated as
+        /// untrusted: this allowlist prevents the tool from being used to open arbitrary files
+        /// (e.g. executables or other unrelated documents) as a "trace".
+        /// </summary>
+        private static readonly string[] AllowedTraceExtensions = { ".saz", ".har", ".etl", ".trace", ".log", ".txt" };
+
+        /// <summary>
+        /// Normalizes and validates an untrusted <c>path</c> argument for <see cref="LoadTraceFile"/>:
+        /// resolves it to a full, canonical path (collapsing any "..", ".", or mixed separators),
+        /// rejects non-filesystem paths (UNC device paths like "\\.\", "\\?\") and paths without an
+        /// allowed trace file extension. Loading a trace legitimately requires access to arbitrary
+        /// user-chosen files (there is no single "allowed root" for this app, unlike a fixed-root
+        /// service), so validation here is intentionally scoped to rejecting non-file-path input and
+        /// unexpected file types rather than a directory allowlist.
+        /// </summary>
+        private static (string? Path, string? Error) ResolveTraceFilePath(string path)
+        {
+            string fullPath;
+            try
+            {
+                fullPath = Path.GetFullPath(path);
+            }
+            catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
+            {
+                return (null, $"Invalid path '{path}': {ex.Message}");
+            }
+
+            if (fullPath.StartsWith(@"\\.\", StringComparison.Ordinal) || fullPath.StartsWith(@"\\?\", StringComparison.Ordinal))
+                return (null, $"Invalid path '{path}': device paths are not allowed.");
+
+            var extension = Path.GetExtension(fullPath);
+            if (!AllowedTraceExtensions.Contains(extension, StringComparer.OrdinalIgnoreCase))
+                return (null, $"Invalid path '{path}': unsupported file extension '{extension}'. Allowed extensions: {string.Join(", ", AllowedTraceExtensions)}.");
+
+            return (fullPath, null);
         }
 
         private static bool PayloadContains(HttpTraceFile trace, DataRow row, string searchText)

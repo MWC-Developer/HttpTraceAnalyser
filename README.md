@@ -105,34 +105,38 @@ Every viewer's context menu includes **Word wrap** (default off), alongside **Co
 
 ## MCP server (GitHub Copilot CLI integration)
 
-HttpTraceAnalyser can host an in-process [Model Context Protocol](https://modelcontextprotocol.io/) server, letting you drive the running app from the **GitHub Copilot CLI** — search the loaded trace, add highlight/filter rules, and select specific rows so they appear in the viewers, all via natural-language prompts.
+HttpTraceAnalyser exposes a [Model Context Protocol](https://modelcontextprotocol.io/) server over the standard **stdio transport**, letting you drive the running app from the **GitHub Copilot CLI** (or any other MCP client) — search the loaded trace, add highlight/filter rules, and select specific rows so they appear in the viewers, all via natural-language prompts.
 
-### Enabling the server
+Because MCP stdio servers are spawned directly by the client and communicate over inherited stdin/stdout, the actual MCP server runs as a separate, short-lived console-mode invocation of the same executable (`HttpTraceAnalyser.exe --mcp-stdio`), started by your MCP client — not by the GUI. To let that process act on the trace you already have open, the GUI hosts a small local bridge (a current-user-only named pipe, no network exposure, no elevation) that the stdio process connects to; this is what lets `--mcp-stdio` calls read/mutate the already-loaded, in-memory trace instead of only being able to load new files independently.
 
-1. Open **App Settings**, select **Enable the MCP server**, and click **OK**.
-2. The server binds to `http://127.0.0.1:5088` by default (loopback only — it is not reachable from other machines).
-3. Clear **Enable the MCP server** in **App Settings** (or close the app) to stop it. The server is also stopped automatically on application exit even if left enabled.
+### Enabling the bridge
 
-The **Host MCP Server** section in **App Settings** also changes the listening port and provides a button to copy the generated MCP client configuration. Changing the port restarts an enabled server automatically.
+1. Open **App Settings**, select **Enable the MCP bridge**, and click **OK**. (If you never plan to interact with the GUI's *already-loaded* trace, this step isn't required — `--mcp-stdio` also works standalone for tools that don't need a live GUI session, though most tools here expect one.)
+2. The bridge listens on a local named pipe (`\\.\pipe\HttpTraceAnalyser.McpBridge`, or with a suffix if you set one) restricted to the current Windows user only.
+3. Clear **Enable the MCP bridge** in **App Settings** (or close the app) to stop it. It is also stopped automatically on application exit even if left enabled.
+
+The **Integrations** section in **App Settings** lets you set an optional pipe-name suffix (useful only if running multiple GUI instances at once) and provides a button to copy the MCP client configuration for the `--mcp-stdio` launch command.
 
 ### App Settings persistence
 
-Appearance (theme: Auto/Light/Dark), Layout (session view), and the MCP listening port are saved to `%LOCALAPPDATA%\HttpTraceAnalyser\app-settings.json` when **App Settings** is closed with **OK**, so they don't need to be reconfigured on the next launch. **Auto** re-detects the system theme on every launch rather than freezing whatever the system theme happened to be at save time. Whether the MCP server is enabled is *not* persisted — the server always starts stopped and must be re-enabled each session. Each settings category has its own **Reset** button that restores that category's fields to their built-in defaults (Auto theme for Appearance, sessions-left for Layout, the default port for Integrations) without affecting the others; the reset only takes effect once you click **OK**.
+Appearance (theme: Auto/Light/Dark), Layout (session view), and the MCP bridge pipe suffix are saved to `%LOCALAPPDATA%\HttpTraceAnalyser\app-settings.json` when **App Settings** is closed with **OK**, so they don't need to be reconfigured on the next launch. **Auto** re-detects the system theme on every launch rather than freezing whatever the system theme happened to be at save time. Whether the MCP bridge is enabled is *not* persisted — it always starts stopped and must be re-enabled each session. Each settings category has its own **Reset** button that restores that category's fields to their built-in defaults (Auto theme for Appearance, sessions-left for Layout, no pipe suffix for Integrations) without affecting the others; the reset only takes effect once you click **OK**.
 
 ### Registering with GitHub Copilot CLI
 
-With the app running and the MCP server enabled, add it as an HTTP MCP server in your Copilot CLI MCP configuration file:
+Add it as a stdio MCP server in your Copilot CLI MCP configuration file:
 
 ```json
 {
   "mcpServers": {
     "httptraceanalyser": {
-      "type": "http",
-      "url": "http://127.0.0.1:5088"
+      "type": "stdio",
+      "command": "HttpTraceAnalyser.exe",
+      "args": ["--mcp-stdio"]
     }
   }
 }
 ```
+
 
 Verify it's registered with:
 
@@ -215,7 +219,7 @@ Or open `HttpTraceAnalyser.slnx` in Visual Studio 2026 (or newer) and press **F5
 | [AvalonEdit](https://www.nuget.org/packages/AvalonEdit) | Text editor with syntax highlighting for the payload viewers. |
 | [Microsoft.Diagnostics.Tracing.TraceEvent](https://www.nuget.org/packages/Microsoft.Diagnostics.Tracing.TraceEvent) | Managed ETW parser used by the `.etl` loader. |
 | [SharpVectors.Reloaded](https://www.nuget.org/packages/SharpVectors.Reloaded) | WPF SVG rendering. |
-| [ModelContextProtocol.AspNetCore](https://www.nuget.org/packages/ModelContextProtocol.AspNetCore) | Hosts the in-process MCP server used for GitHub Copilot CLI integration. |
+| [ModelContextProtocol](https://www.nuget.org/packages/ModelContextProtocol) | Hosts the stdio MCP server (`--mcp-stdio` mode) used for GitHub Copilot CLI integration. |
 
 ## Project layout
 
@@ -224,7 +228,7 @@ HttpTraceAnalyser/
 ├─ HttpTraceAnalyser.csproj    // net10.0-windows, WPF
 ├─ App.xaml / App.xaml.cs      // application entry point
 ├─ MainWindow.xaml(.cs)        // trace list, viewers, toolbar
-├─ AppSettingsWindow.xaml(.cs) // view, theme, and hosted MCP server settings
+├─ AppSettingsWindow.xaml(.cs) // view, theme, and hosted MCP bridge settings
 ├─ CustomColumnsWindow.xaml(.cs) // user-defined header-derived columns
 ├─ FilterWindow.xaml(.cs)      // filter rule editor
 ├─ HighlightsWindow.xaml(.cs)  // highlight rule editor

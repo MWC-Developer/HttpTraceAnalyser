@@ -82,23 +82,21 @@
                             <TextBlock Grid.Column="0" Text="Integrations" FontSize="20" FontWeight="SemiBold" />
                             <Button Grid.Column="1" Content="Reset" Click="ResetIntegrationsButton_Click" />
                         </Grid>
-                        <TextBlock Text="Host MCP Server" FontSize="16" FontWeight="SemiBold"
+                        <TextBlock Text="Host MCP Bridge" FontSize="16" FontWeight="SemiBold"
                                    Margin="0,18,0,0" />
                         <CheckBox x:Name="HostMcpServerCheckBox"
-                                  Content="Enable the MCP server"
+                                  Content="Enable the MCP bridge"
                                   Margin="0,12,0,0" />
                         <TextBlock x:Name="McpStatusText" Margin="0,4,0,0"
                                    Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
 
-                        <TextBlock Text="Listening port" FontWeight="SemiBold" Margin="0,14,0,4" />
+                        <TextBlock Text="Instance pipe suffix (optional)" FontWeight="SemiBold" Margin="0,14,0,4" />
                         <TextBlock TextWrapping="Wrap" Margin="0,0,0,6"
-                                   Text="The app hosts an MCP HTTP server on the loopback interface (127.0.0.1). Port changes restart the server when necessary." />
-                        <TextBox x:Name="PortTextBox" Width="100" HorizontalAlignment="Left" />
-                        <TextBlock x:Name="PortErrorText" Foreground="Red" TextWrapping="Wrap"
-                                   Visibility="Collapsed" Margin="0,4,0,0" />
+                                   Text="The app hosts a local, current-user-only named-pipe MCP bridge used by a separate 'HttpTraceAnalyser.exe --mcp-stdio' process to reach this window's live trace data. Set a suffix only if running multiple instances at once." />
+                        <TextBox x:Name="PipeSuffixTextBox" Width="100" HorizontalAlignment="Left" />
 
-                        <TextBlock Text="Client endpoint" FontWeight="SemiBold" Margin="0,16,0,4" />
-                        <TextBox x:Name="ClientEndpointTextBox" IsReadOnly="True" Width="280"
+                        <TextBlock Text="MCP client launch command" FontWeight="SemiBold" Margin="0,16,0,4" />
+                        <TextBox x:Name="ClientEndpointTextBox" IsReadOnly="True" Width="360"
                                  HorizontalAlignment="Left" FontFamily="Consolas" />
                         <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
                             <Button x:Name="CopyClientConfigButton" Content="Copy client configuration"

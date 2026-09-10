@@ -865,7 +865,7 @@ namespace HttpTraceAnalyser
                     ThemeManager.Apply(theme);
 
                 await SetViewLayoutAsync(window.UseSplitView);
-                await ApplyMcpSettingsAsync(window.HostMcpServer, window.McpPort);
+                await ApplyMcpSettingsAsync(window.HostMcpServer, window.McpPipeNameSuffix);
 
                 McpServerButton.Checked -= McpServerButton_Checked;
                 McpServerButton.Unchecked -= McpServerButton_Unchecked;
@@ -877,7 +877,7 @@ namespace HttpTraceAnalyser
 
                 AppSettings.ThemePreference = window.SelectedThemePreference;
                 AppSettings.UseSplitView = window.UseSplitView;
-                AppSettings.McpPort = window.McpPort;
+                AppSettings.McpPipeNameSuffix = window.McpPipeNameSuffix;
                 AppSettings.Save();
             }
             catch (Exception ex)
@@ -891,13 +891,13 @@ namespace HttpTraceAnalyser
             }
         }
 
-        private static async Task ApplyMcpSettingsAsync(bool shouldRun, int port)
+        private static async Task ApplyMcpSettingsAsync(bool shouldRun, string? pipeNameSuffix)
         {
-            bool portChanged = McpHostManager.Port != port;
-            if (McpHostManager.IsRunning && (!shouldRun || portChanged))
+            bool suffixChanged = McpHostManager.PipeNameSuffix != pipeNameSuffix;
+            if (McpHostManager.IsRunning && (!shouldRun || suffixChanged))
                 await McpHostManager.StopAsync();
 
-            McpHostManager.Port = port;
+            McpHostManager.PipeNameSuffix = pipeNameSuffix;
 
             if (shouldRun && !McpHostManager.IsRunning)
                 await McpHostManager.StartAsync();

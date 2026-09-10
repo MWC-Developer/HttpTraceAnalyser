@@ -1,70 +1,52 @@
 using System;
-using System.Net;
-using System.Threading.Tasks;
-using Microsoft.AspNetCore.Builder;
-using Microsoft.AspNetCore.Hosting;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
+using HttpTraceAnalyser.Mcp;
 
 namespace HttpTraceAnalyser
 {
     /// <summary>
-    /// Starts/stops an in-process MCP server (HTTP transport, localhost-only) that exposes the
-    /// currently running <see cref="MainWindow"/> for control by external MCP clients such
-    /// as the GitHub Copilot CLI. Tools are discovered from <see cref="Mcp.TraceMcpTools"/>.
-    /// Lifetime is controlled explicitly (e.g. via the "MCP Server" ribbon toggle) rather than
-    /// starting automatically with the application.
+    /// Starts/stops the in-process named-pipe bridge (see <see cref="Mcp.TraceBridgeServer"/>)
+    /// that lets a separate "HttpTraceAnalyser.exe --mcp-stdio" process (the actual MCP stdio
+    /// server, spawned by an MCP client such as GitHub Copilot CLI) reach the currently running
+    /// <see cref="MainWindow"/> and operate on its live, in-memory trace data. Lifetime is
+    /// controlled explicitly (e.g. via the "MCP Server" ribbon toggle) rather than starting
+    /// automatically with the application. The bridge is local-only and restricted to the current
+    /// Windows user; no network exposure and no elevation is required.
     /// </summary>
     internal static class McpHostManager
     {
-        /// <summary>Default port the MCP HTTP endpoint listens on.</summary>
-        public const int DefaultPort = 5088;
+        private static TraceBridgeServer? _server;
 
-        /// <summary>Port the MCP HTTP endpoint listens on. Bound to loopback only. Configurable via the Settings dialog before the server is started.</summary>
-        public static int Port { get; set; } = DefaultPort;
+        /// <summary>
+        /// Optional suffix distinguishing this instance's pipe from other running copies of the
+        /// app. Configurable via the Settings dialog before the server is started.
+        /// </summary>
+        public static string? PipeNameSuffix { get; set; }
 
-        private static IHost? _host;
+        /// <summary>Whether the MCP bridge is currently running.</summary>
+        public static bool IsRunning => _server is not null;
 
-        /// <summary>Whether the MCP server is currently running.</summary>
-        public static bool IsRunning => _host is not null;
-
-        /// <summary>Starts the MCP server. No-op if already running.</summary>
-        public static async Task StartAsync()
+        /// <summary>Starts the MCP bridge. No-op if already running.</summary>
+        public static System.Threading.Tasks.Task StartAsync()
         {
-            if (_host is not null)
-                return;
+            if (_server is not null)
+                return System.Threading.Tasks.Task.CompletedTask;
 
-            var builder = WebApplication.CreateBuilder();
-
-            builder.WebHost.ConfigureKestrel(options =>
-            {
-                // Loopback-only: this app should not be reachable from other machines.
-                options.Listen(IPAddress.Loopback, Port);
-            });
-
-            builder.Services
-                .AddMcpServer()
-                .WithHttpTransport()
-                .WithToolsFromAssembly(typeof(McpHostManager).Assembly);
-
-            var app = builder.Build();
-            app.MapMcp();
-
-            await app.StartAsync().ConfigureAwait(false);
-            _host = app;
+            var server = new TraceBridgeServer(PipeNameSuffix);
+            server.Start();
+            _server = server;
+            return System.Threading.Tasks.Task.CompletedTask;
         }
 
-        /// <summary>Stops the MCP server, if running. No-op otherwise.</summary>
-        public static async Task StopAsync()
+        /// <summary>Stops the MCP bridge, if running. No-op otherwise.</summary>
+        public static System.Threading.Tasks.Task StopAsync()
         {
-            var host = _host;
-            if (host is null)
-                return;
+            var server = _server;
+            if (server is null)
+                return System.Threading.Tasks.Task.CompletedTask;
 
-            _host = null;
-            await host.StopAsync(TimeSpan.FromSeconds(2)).ConfigureAwait(false);
-            host.Dispose();
+            _server = null;
+            server.Dispose();
+            return System.Threading.Tasks.Task.CompletedTask;
         }
     }
 }
-

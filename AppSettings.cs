@@ -5,9 +5,9 @@ using HttpTraceAnalyser.Model;
 namespace HttpTraceAnalyser
 {
     /// <summary>
-    /// Persisted application-level preferences (appearance, layout, MCP port). Whether the
-    /// MCP server is currently enabled is intentionally excluded: the server always starts
-    /// stopped and must be explicitly re-enabled each session.
+    /// Persisted application-level preferences (appearance, layout, MCP bridge pipe name). Whether
+    /// the MCP bridge is currently enabled is intentionally excluded: it always starts stopped and
+    /// must be explicitly re-enabled each session.
     /// </summary>
     public static class AppSettings
     {
@@ -30,7 +30,12 @@ namespace HttpTraceAnalyser
 
         public static bool UseSplitView { get; set; }
 
-        public static int McpPort { get; set; } = McpHostManager.DefaultPort;
+        /// <summary>
+        /// Optional suffix distinguishing this instance's MCP named-pipe bridge from other running
+        /// copies of the app (e.g. "1", "2"). Null/empty selects the default, well-known pipe
+        /// name. Persisted under the legacy "McpPort" field name for settings-file compatibility.
+        /// </summary>
+        public static string? McpPipeNameSuffix { get; set; }
 
         static AppSettings() => Load();
 
@@ -48,8 +53,7 @@ namespace HttpTraceAnalyser
                 ThemePreference = JsonConfigurationPersistence.ValidateEnum(
                     document.ThemePreference, nameof(document.ThemePreference));
                 UseSplitView = document.UseSplitView;
-                if (document.McpPort is > 0 and <= 65535)
-                    McpPort = document.McpPort;
+                McpPipeNameSuffix = string.IsNullOrWhiteSpace(document.McpPipeNameSuffix) ? null : document.McpPipeNameSuffix;
             }
             catch (InvalidDataException)
             {
@@ -65,7 +69,7 @@ namespace HttpTraceAnalyser
                 Version = JsonConfigurationPersistence.CurrentVersion,
                 ThemePreference = ThemePreference,
                 UseSplitView = UseSplitView,
-                McpPort = McpPort,
+                McpPipeNameSuffix = McpPipeNameSuffix,
             };
 
             try
@@ -85,7 +89,7 @@ namespace HttpTraceAnalyser
             public required int Version { get; set; }
             public ThemePreference ThemePreference { get; set; }
             public bool UseSplitView { get; set; }
-            public int McpPort { get; set; }
+            public string? McpPipeNameSuffix { get; set; }
         }
     }
 }

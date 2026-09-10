@@ -24,7 +24,7 @@ namespace HttpTraceAnalyser
             Model.Extensibility.PluginManager.LoadPlugins();
 
             ThemeManager.Apply(AppSettings.EffectiveTheme);
-            McpHostManager.Port = AppSettings.McpPort;
+            McpHostManager.PipeNameSuffix = AppSettings.McpPipeNameSuffix;
         }
 
         protected override void OnExit(ExitEventArgs e)

@@ -11,12 +11,12 @@ namespace HttpTraceAnalyser
             ViewLayoutCombo.SelectedIndex = useSplitView ? 1 : 0;
             ThemeCombo.SelectedIndex = (int)AppSettings.ThemePreference;
             HostMcpServerCheckBox.IsChecked = McpHostManager.IsRunning;
-            PortTextBox.Text = McpHostManager.Port.ToString();
+            PipeSuffixTextBox.Text = McpHostManager.PipeNameSuffix ?? string.Empty;
             McpStatusText.Text = McpHostManager.IsRunning
-                ? "The server is currently running."
-                : "The server is currently stopped.";
+                ? "The bridge is currently running."
+                : "The bridge is currently stopped.";
             UpdateClientEndpoint();
-            PortTextBox.TextChanged += (_, _) => UpdateClientEndpoint();
+            PipeSuffixTextBox.TextChanged += (_, _) => UpdateClientEndpoint();
             SettingsCategoryList.SelectedIndex = 0;
         }
 
@@ -26,7 +26,7 @@ namespace HttpTraceAnalyser
 
         public bool HostMcpServer => HostMcpServerCheckBox.IsChecked == true;
 
-        public int McpPort { get; private set; }
+        public string? McpPipeNameSuffix { get; private set; }
 
         private void SettingsCategoryList_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
@@ -41,27 +41,32 @@ namespace HttpTraceAnalyser
                 : Visibility.Collapsed;
         }
 
+        private string EffectivePipeSuffix => PipeSuffixTextBox.Text.Trim();
+
         private void UpdateClientEndpoint()
         {
-            bool isValid = int.TryParse(PortTextBox.Text, out var port) && port is >= 1 and <= 65535;
-            ClientEndpointTextBox.Text = isValid
-                ? $"http://127.0.0.1:{port}"
-                : "Enter a valid listening port";
-            CopyClientConfigButton.IsEnabled = isValid;
+            var suffix = EffectivePipeSuffix;
+            ClientEndpointTextBox.Text = string.IsNullOrEmpty(suffix)
+                ? "HttpTraceAnalyser.exe --mcp-stdio"
+                : $"HttpTraceAnalyser.exe --mcp-stdio --mcp-pipe={suffix}";
+            CopyClientConfigButton.IsEnabled = true;
             CopyStatusText.Text = string.Empty;
         }
 
         private void CopyClientConfigButton_Click(object sender, RoutedEventArgs e)
         {
-            if (!int.TryParse(PortTextBox.Text, out var port) || port is < 1 or > 65535)
-                return;
+            var suffix = EffectivePipeSuffix;
+            var argsJson = string.IsNullOrEmpty(suffix)
+                ? "[\"--mcp-stdio\"]"
+                : $"[\"--mcp-stdio\", \"--mcp-pipe={suffix}\"]";
 
             var config =
                 "{\n" +
                 "  \"mcpServers\": {\n" +
                 "    \"httptraceanalyser\": {\n" +
-                "      \"type\": \"http\",\n" +
-                $"      \"url\": \"http://127.0.0.1:{port}\"\n" +
+                "      \"type\": \"stdio\",\n" +
+                "      \"command\": \"HttpTraceAnalyser.exe\",\n" +
+                $"      \"args\": {argsJson}\n" +
                 "    }\n" +
                 "  }\n" +
                 "}";
@@ -89,19 +94,12 @@ namespace HttpTraceAnalyser
 
         private void ResetIntegrationsButton_Click(object sender, RoutedEventArgs e)
         {
-            PortTextBox.Text = McpHostManager.DefaultPort.ToString();
+            PipeSuffixTextBox.Text = string.Empty;
         }
 
         private void OkButton_Click(object sender, RoutedEventArgs e)
         {
-            if (!int.TryParse(PortTextBox.Text, out var port) || port < 1 || port > 65535)
-            {
-                PortErrorText.Text = "Enter a valid port number between 1 and 65535.";
-                PortErrorText.Visibility = Visibility.Visible;
-                return;
-            }
-
-            McpPort = port;
+            McpPipeNameSuffix = string.IsNullOrWhiteSpace(PipeSuffixTextBox.Text) ? null : PipeSuffixTextBox.Text.Trim();
             DialogResult = true;
         }
     }

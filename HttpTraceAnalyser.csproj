@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
@@ -8,19 +8,17 @@
     <UseWPF>true</UseWPF>
     <GenerateTargetFrameworkAttribute>false</GenerateTargetFrameworkAttribute>
     <ApplicationIcon>HttpTraceAnalyser.ico</ApplicationIcon>
+    <StartupObject>HttpTraceAnalyser.Program</StartupObject>
     <Title>HTTP Trace Analyser</Title>
     <AssemblyVersion>1.0.2.0</AssemblyVersion>
     <FileVersion>1.0.2.0</FileVersion>
   </PropertyGroup>
 
   <ItemGroup>
-    <FrameworkReference Include="Microsoft.AspNetCore.App" />
-  </ItemGroup>
-
-  <ItemGroup>
     <PackageReference Include="AvalonEdit" Version="6.3.1.120" />
     <PackageReference Include="Microsoft.Diagnostics.Tracing.TraceEvent" Version="3.1.16" />
-    <PackageReference Include="ModelContextProtocol.AspNetCore" Version="2.2.0" />
+    <PackageReference Include="ModelContextProtocol" Version="2.2.0" />
+    <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.0" />
     <PackageReference Include="SharpVectors.Reloaded" Version="1.8.4.2" />
   </ItemGroup>
 
@@ -45,6 +43,12 @@
 
   <ItemGroup>
     <Folder Include="Tools\OutlookETLParser\" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Remove="tools\local\**" />
+    <None Remove="tools\local\**" />
+    <EmbeddedResource Remove="tools\local\**" />
   </ItemGroup>
 
 </Project>
