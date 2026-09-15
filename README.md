@@ -107,13 +107,14 @@ Every viewer's context menu includes **Word wrap** (default off), alongside **Co
 
 HttpTraceAnalyser exposes a [Model Context Protocol](https://modelcontextprotocol.io/) server over the standard **stdio transport**, letting you drive the running app from the **GitHub Copilot CLI** (or any other MCP client) — search the loaded trace, add highlight/filter rules, and select specific rows so they appear in the viewers, all via natural-language prompts.
 
-Because MCP stdio servers are spawned directly by the client and communicate over inherited stdin/stdout, the actual MCP server runs as a separate, short-lived console-mode invocation of the same executable (`HttpTraceAnalyser.exe --mcp-stdio`), started by your MCP client — not by the GUI. To let that process act on the trace you already have open, the GUI hosts a small local bridge (a current-user-only named pipe, no network exposure, no elevation) that the stdio process connects to; this is what lets `--mcp-stdio` calls read/mutate the already-loaded, in-memory trace instead of only being able to load new files independently.
+Because MCP stdio servers are spawned directly by the client and communicate over inherited stdin/stdout, the actual MCP server runs as a separate console-mode invocation of the same executable (`HttpTraceAnalyser.exe --mcp-stdio`), started by your MCP client — not by the GUI. The GUI hosts a local named-pipe bridge that this stdio process connects to, letting MCP calls operate on the already-loaded, in-memory trace and update the running window.
 
 ### Enabling the bridge
 
-1. Open **App Settings**, select **Enable the MCP bridge**, and click **OK**. (If you never plan to interact with the GUI's *already-loaded* trace, this step isn't required — `--mcp-stdio` also works standalone for tools that don't need a live GUI session, though most tools here expect one.)
-2. The bridge listens on a local named pipe (`\\.\pipe\HttpTraceAnalyser.McpBridge`, or with a suffix if you set one) restricted to the current Windows user only.
-3. Clear **Enable the MCP bridge** in **App Settings** (or close the app) to stop it. It is also stopped automatically on application exit even if left enabled.
+1. Start HttpTraceAnalyser and load the trace you want to inspect.
+2. Open **App Settings**, select **Enable the MCP bridge**, and click **OK**. The bridge is required: all MCP tools proxy to the running GUI's in-memory state.
+3. The bridge listens locally through the named pipe `\\.\pipe\HttpTraceAnalyser.McpBridge` (or the configured suffix). It does not expose a TCP/HTTP endpoint and does not require elevation.
+4. Clear **Enable the MCP bridge** in **App Settings** (or close the app) to stop it. It is also stopped automatically on application exit even if left enabled.
 
 The **Integrations** section in **App Settings** lets you set an optional pipe-name suffix (useful only if running multiple GUI instances at once) and provides a button to copy the MCP client configuration for the `--mcp-stdio` launch command.
 
@@ -123,19 +124,28 @@ Appearance (theme: Auto/Light/Dark), Layout (session view), and the MCP bridge p
 
 ### Registering with GitHub Copilot CLI
 
-Add it as a stdio MCP server in your Copilot CLI MCP configuration file:
+Add it as a stdio MCP server in your Copilot CLI MCP configuration file. Set `command` to the absolute path of the built or published executable, rather than relying on it being available in `PATH`:
 
 ```json
 {
   "mcpServers": {
     "httptraceanalyser": {
       "type": "stdio",
-      "command": "HttpTraceAnalyser.exe",
+      "command": "C:\\path\\to\\HttpTraceAnalyser.exe",
       "args": ["--mcp-stdio"]
     }
   }
 }
 ```
+
+If the GUI uses a pipe suffix, add the matching argument (for example, `"args": ["--mcp-stdio", "--mcp-pipe=work"]`). The copied configuration in **App Settings → Integrations** includes this automatically.
+
+### Transport and security behavior
+
+- **MCP transport:** the server uses the official [`ModelContextProtocol`](https://www.nuget.org/packages/ModelContextProtocol) SDK and its stdio transport. MCP requests and notifications arrive on `stdin`; only MCP responses and notifications are written to `stdout`; server diagnostics are written to `stderr`.
+- **GUI bridge:** the stdio process sends length-prefixed UTF-8 JSON messages over the local named pipe. The bridge never runs a shell command, opens a network listener, or requires elevation.
+- **Availability:** each bridge call has a bounded response timeout. If the GUI is closed, the bridge is disabled, the pipe suffix does not match, or the UI thread is blocked by a modal dialog/long-running operation, the MCP tool returns a descriptive bridge error rather than waiting indefinitely. Close modal dialogs and retry if this occurs.
+- **Input handling:** MCP tool arguments are treated as untrusted. Trace paths are normalized and limited to supported trace extensions; tools use typed arguments and fixed tool dispatch rather than accepting arbitrary commands.
 
 
 Verify it's registered with:
@@ -146,7 +156,7 @@ gh copilot mcp list
 
 ### Available tools
 
-Exposed from [`Mcp/TraceMcpTools.cs`](Mcp/TraceMcpTools.cs). All tool calls are serialized (a single call executes at a time) and marshaled onto the UI thread, so results appear live in the running window and calls can't race each other's effects.
+The stdio server exposes proxies from [`Mcp/BridgedTraceMcpTools.cs`](Mcp/BridgedTraceMcpTools.cs), which forward to the GUI-side implementations in [`Mcp/TraceMcpTools.cs`](Mcp/TraceMcpTools.cs). Calls are serialized and marshaled onto the UI thread, so results appear live in the running window and calls cannot race each other's effects.
 
 **Sessions**
 
@@ -226,17 +236,23 @@ Or open `HttpTraceAnalyser.slnx` in Visual Studio 2026 (or newer) and press **F5
 ```
 HttpTraceAnalyser/
 ├─ HttpTraceAnalyser.csproj    // net10.0-windows, WPF
-├─ App.xaml / App.xaml.cs      // application entry point
+├─ App.xaml / App.xaml.cs      // WPF application startup
+├─ Program.cs                  // branches between GUI and --mcp-stdio modes
 ├─ MainWindow.xaml(.cs)        // trace list, viewers, toolbar
 ├─ AppSettingsWindow.xaml(.cs) // view, theme, and hosted MCP bridge settings
 ├─ CustomColumnsWindow.xaml(.cs) // user-defined header-derived columns
 ├─ FilterWindow.xaml(.cs)      // filter rule editor
 ├─ HighlightsWindow.xaml(.cs)  // highlight rule editor
 ├─ ColorPickerWindow.xaml(.cs) // themed in-app colour picker (swatches + hex entry)
-├─ AppSettings.cs              // persisted appearance/layout/MCP-port preferences
-├─ McpHostManager.cs           // starts/stops the in-process MCP HTTP server
+├─ AppSettings.cs              // persisted appearance/layout/MCP bridge preferences
+├─ McpHostManager.cs           // starts/stops the GUI-side named-pipe bridge
 ├─ Mcp/
-│  └─ TraceMcpTools.cs         // MCP tools exposed to GitHub Copilot CLI
+│  ├─ McpStdioHost.cs          // stdio MCP server host
+│  ├─ BridgedTraceMcpTools.cs  // stdio tool proxies
+│  ├─ TraceBridgeServer.cs     // GUI-side named-pipe bridge
+│  ├─ TraceBridgeClient.cs     // stdio-side named-pipe bridge client
+│  ├─ BridgeFraming.cs         // length-prefixed bridge protocol framing
+│  └─ TraceMcpTools.cs         // GUI-side MCP tool implementations
 └─ Model/
    ├─ HttpMessage.cs           // HttpMessage / HttpRequest / HttpResponse
    ├─ HttpTraceFile.cs         // DataTable-backed base + loader registry
