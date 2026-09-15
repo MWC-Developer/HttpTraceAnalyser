@@ -10,8 +10,8 @@
     <ApplicationIcon>HttpTraceAnalyser.ico</ApplicationIcon>
     <StartupObject>HttpTraceAnalyser.Program</StartupObject>
     <Title>HTTP Trace Analyser</Title>
-    <AssemblyVersion>1.0.2.0</AssemblyVersion>
-    <FileVersion>1.0.2.0</FileVersion>
+    <AssemblyVersion>1.0.3.0</AssemblyVersion>
+    <FileVersion>1.0.3.0</FileVersion>
   </PropertyGroup>
 
   <ItemGroup>
