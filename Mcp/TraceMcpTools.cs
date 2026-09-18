@@ -173,7 +173,7 @@ namespace HttpTraceAnalyser.Mcp
         /// untrusted: this allowlist prevents the tool from being used to open arbitrary files
         /// (e.g. executables or other unrelated documents) as a "trace".
         /// </summary>
-        private static readonly string[] AllowedTraceExtensions = { ".saz", ".har", ".etl", ".trace", ".log", ".txt" };
+        private static readonly string[] AllowedTraceExtensions = { ".saz", ".har", ".etl", ".trace", ".json", ".log", ".txt" };
 
         /// <summary>
         /// Normalizes and validates an untrusted <c>path</c> argument for <see cref="LoadTraceFile"/>:

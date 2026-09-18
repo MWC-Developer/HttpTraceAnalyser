@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.ComponentModel;
 using System.Data;
 using System.IO;
+using System.IO.Compression;
 using System.Linq;
 using System.Text;
 using System.Text.Json;
@@ -1794,11 +1795,12 @@ namespace HttpTraceAnalyser
             var dialog = new Microsoft.Win32.OpenFileDialog
             {
                 Title = "Open HTTP trace file",
-                Filter = "HTTP trace files (*.saz;*.har;*.etl;*.trace)|*.saz;*.har;*.etl;*.trace|" +
+                Filter = "HTTP trace files (*.saz;*.har;*.etl;*.trace;*.json)|*.saz;*.har;*.etl;*.trace;*.json|" +
                          "Fiddler session archive (*.saz)|*.saz|" +
                          "HTTP archive (*.har)|*.har|" +
                          "Event Trace for Windows (*.etl)|*.etl|" +
                          "EWS API trace (*.trace;*.log;*.txt)|*.trace;*.log;*.txt|" +
+                         "Outlook HTTP export (*.json)|*.json|" +
                          "All files (*.*)|*.*"
             };
 
@@ -2753,10 +2755,15 @@ namespace HttpTraceAnalyser
                     return false;
                 }
 
+                // Trace loaders retain captured bytes verbatim. Decode Content-Encoding only on
+                // this display copy so headers such as "Content-Encoding: gzip" work equally
+                // for text and binary payload renderers without changing the underlying trace.
+                var displayPayload = await Task.Run(() => DecodeContentEncodedPayload(payload, headers));
+
                 switch (format)
                 {
                     case PayloadFormat.Image:
-                        if (TryLoadBitmap(payload, out var bitmap))
+                        if (TryLoadBitmap(displayPayload, out var bitmap))
                         {
                             ShowImage(editor, imageScroll, svgScroll);
                             imageControl.Source = bitmap;
@@ -2764,20 +2771,20 @@ namespace HttpTraceAnalyser
                         else
                         {
                             ShowEditor(editor, imageScroll, svgScroll);
-                            editor.Text = $"[Unable to decode as image: {payload.Length} byte(s)]";
+                            editor.Text = $"[Unable to decode as image: {displayPayload.Length} byte(s)]";
                             editor.SyntaxHighlighting = null;
                         }
                         return false;
 
                     case PayloadFormat.Svg:
-                        if (TryLoadSvg(payload, svgControl))
+                        if (TryLoadSvg(displayPayload, svgControl))
                         {
                             ShowSvg(editor, imageScroll, svgScroll);
                         }
                         else
                         {
                             ShowEditor(editor, imageScroll, svgScroll);
-                            editor.Text = $"[Unable to decode as SVG: {payload.Length} byte(s)]";
+                            editor.Text = $"[Unable to decode as SVG: {displayPayload.Length} byte(s)]";
                             editor.SyntaxHighlighting = null;
                         }
                         return false;
@@ -2790,11 +2797,11 @@ namespace HttpTraceAnalyser
                 string text;
                 if (shouldShowBusy)
                 {
-                    text = await Task.Run(() => DecodePayloadText(payload, headers));
+                    text = await Task.Run(() => DecodePayloadBytesToText(displayPayload, headers));
                 }
                 else
                 {
-                    text = DecodePayloadText(payload, headers);
+                    text = DecodePayloadBytesToText(displayPayload, headers);
                 }
 
                 // Set text immediately WITHOUT syntax highlighting to show content right away
@@ -3090,8 +3097,83 @@ namespace HttpTraceAnalyser
             return PayloadFormat.PlainText;
         }
 
-        /// <summary>Decodes a payload to text using its Content-Type charset (defaulting to UTF-8). Internal for reuse by the MCP tools.</summary>
+        /// <summary>
+        /// Decodes a payload to text after applying its Content-Encoding, then its Content-Type
+        /// charset (defaulting to UTF-8). Internal for reuse by the MCP tools.
+        /// </summary>
         internal static string DecodePayloadText(byte[] payload, IReadOnlyList<KeyValuePair<string, string>>? headers)
+            => DecodePayloadBytesToText(DecodeContentEncodedPayload(payload, headers), headers);
+
+        // Content encodings are listed in the order in which they were applied, so decode them
+        // in reverse order. Keep the original captured bytes when an encoding is unsupported,
+        // malformed, or expands beyond the display safety limit.
+        private static byte[] DecodeContentEncodedPayload(byte[] payload, IReadOnlyList<KeyValuePair<string, string>>? headers)
+        {
+            if (payload.Length == 0 || headers is null)
+                return payload;
+
+            var encodings = new List<string>();
+            foreach (var header in headers)
+            {
+                if (!string.Equals(header.Key, "Content-Encoding", StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                foreach (var value in (header.Value ?? string.Empty).Split(','))
+                {
+                    var encoding = value.Trim().Split(';')[0].Trim();
+                    if (encoding.Length > 0 && !string.Equals(encoding, "identity", StringComparison.OrdinalIgnoreCase))
+                        encodings.Add(encoding);
+                }
+            }
+
+            if (encodings.Count == 0)
+                return payload;
+
+            try
+            {
+                var decoded = payload;
+                for (var i = encodings.Count - 1; i >= 0; i--)
+                    decoded = Decompress(decoded, encodings[i]);
+                return decoded;
+            }
+            catch (InvalidDataException)
+            {
+                return payload;
+            }
+            catch (IOException)
+            {
+                return payload;
+            }
+            catch (NotSupportedException)
+            {
+                return payload;
+            }
+        }
+
+        private static byte[] Decompress(byte[] payload, string contentEncoding)
+        {
+            using var input = new MemoryStream(payload, writable: false);
+            using Stream decompressor = contentEncoding.ToLowerInvariant() switch
+            {
+                "gzip" or "x-gzip" => new GZipStream(input, CompressionMode.Decompress),
+                "deflate" => new DeflateStream(input, CompressionMode.Decompress),
+                "br" => new BrotliStream(input, CompressionMode.Decompress),
+                _ => throw new NotSupportedException($"Unsupported content encoding: {contentEncoding}"),
+            };
+            using var output = new MemoryStream();
+            var buffer = new byte[81920];
+            const int maximumDecodedPayloadLength = 100 * 1024 * 1024;
+            int bytesRead;
+            while ((bytesRead = decompressor.Read(buffer, 0, buffer.Length)) > 0)
+            {
+                if (output.Length > maximumDecodedPayloadLength - bytesRead)
+                    throw new InvalidDataException("Decoded payload exceeds the display safety limit.");
+                output.Write(buffer, 0, bytesRead);
+            }
+            return output.ToArray();
+        }
+
+        private static string DecodePayloadBytesToText(byte[] payload, IReadOnlyList<KeyValuePair<string, string>>? headers)
         {
             var encoding = Encoding.UTF8;
             if (headers is not null)
