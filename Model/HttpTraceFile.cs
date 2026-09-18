@@ -419,7 +419,9 @@ namespace HttpTraceAnalyser.Model
                 ? new DateTimeOffset(DateTime.SpecifyKind(ts, DateTimeKind.Local))
                 : (DateTimeOffset?)null;
 
-            return new HttpResponse(timestamp, headers, payload, statusCode, reason);
+            // DataTable payload is already normalized for display at ingestion time.
+            // Avoid decoding again when materializing row objects.
+            return new HttpResponse(timestamp, headers, payload, statusCode, reason, decodePayload: false);
         }
 
         private static string SerializeHeaders(IReadOnlyList<KeyValuePair<string, string>> headers)

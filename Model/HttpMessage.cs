@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
+using System.IO.Compression;
 
 namespace HttpTraceAnalyser.Model
 {
@@ -12,10 +14,80 @@ namespace HttpTraceAnalyser.Model
             DateTimeOffset? timestamp,
             IReadOnlyList<KeyValuePair<string, string>> headers,
             byte[] payload)
+            : this(timestamp, headers, payload, decodePayload: true)
+        {
+        }
+
+        protected HttpMessage(
+            DateTimeOffset? timestamp,
+            IReadOnlyList<KeyValuePair<string, string>> headers,
+            byte[] payload,
+            bool decodePayload)
         {
             Timestamp = timestamp;
             Headers = headers ?? Array.Empty<KeyValuePair<string, string>>();
-            Payload = payload ?? Array.Empty<byte>();
+            var safePayload = payload ?? Array.Empty<byte>();
+            Payload = decodePayload ? DecompressPayload(safePayload, Headers) : safePayload;
+        }
+
+        private static byte[] DecompressPayload(
+            byte[] payload,
+            IReadOnlyList<KeyValuePair<string, string>> headers)
+        {
+            if (payload.Length == 0)
+                return payload;
+
+            var encodings = GetContentEncodings(headers);
+            var decoded = payload;
+
+            try
+            {
+                // Content-Encoding lists codings in application order, so decode them in reverse.
+                for (var index = encodings.Count - 1; index >= 0; index--)
+                    decoded = Decompress(decoded, encodings[index]);
+
+                return decoded;
+            }
+            catch (InvalidDataException)
+            {
+                return payload;
+            }
+        }
+
+        private static byte[] Decompress(byte[] payload, string encoding)
+        {
+            using var input = new MemoryStream(payload, writable: false);
+            using Stream decompressor = encoding switch
+            {
+                "gzip" => new GZipStream(input, CompressionMode.Decompress),
+                "deflate" => new ZLibStream(input, CompressionMode.Decompress),
+                "br" => new BrotliStream(input, CompressionMode.Decompress),
+                _ => throw new InvalidDataException($"Unsupported content encoding: {encoding}")
+            };
+            using var output = new MemoryStream();
+            decompressor.CopyTo(output);
+            return output.ToArray();
+        }
+
+        private static IReadOnlyList<string> GetContentEncodings(
+            IReadOnlyList<KeyValuePair<string, string>> headers)
+        {
+            var encodings = new List<string>();
+
+            foreach (var header in headers)
+            {
+                if (!string.Equals(header.Key, "Content-Encoding", StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                foreach (var encoding in (header.Value ?? string.Empty).Split(','))
+                {
+                    var normalizedEncoding = encoding.Trim().ToLowerInvariant();
+                    if (normalizedEncoding.Length > 0)
+                        encodings.Add(normalizedEncoding);
+                }
+            }
+
+            return encodings;
         }
 
         /// <summary>Time the message was captured, if known.</summary>
@@ -24,7 +96,7 @@ namespace HttpTraceAnalyser.Model
         /// <summary>Headers in original order (duplicates preserved).</summary>
         public IReadOnlyList<KeyValuePair<string, string>> Headers { get; }
 
-        /// <summary>Raw message body bytes.</summary>
+        /// <summary>Message body bytes, decompressed for supported Content-Encoding values.</summary>
         public byte[] Payload { get; }
     }
 
@@ -37,6 +109,19 @@ namespace HttpTraceAnalyser.Model
             string method,
             Uri url)
             : base(timestamp, headers, payload)
+        {
+            Method = method ?? string.Empty;
+            Url = url;
+        }
+
+        internal HttpRequest(
+            DateTimeOffset? timestamp,
+            IReadOnlyList<KeyValuePair<string, string>> headers,
+            byte[] payload,
+            string method,
+            Uri url,
+            bool decodePayload)
+            : base(timestamp, headers, payload, decodePayload)
         {
             Method = method ?? string.Empty;
             Url = url;
@@ -72,6 +157,19 @@ namespace HttpTraceAnalyser.Model
             int? statusCode = null,
             string? reasonPhrase = null)
             : base(timestamp, headers, payload)
+        {
+            StatusCode = statusCode;
+            ReasonPhrase = reasonPhrase ?? string.Empty;
+        }
+
+        internal HttpResponse(
+            DateTimeOffset? timestamp,
+            IReadOnlyList<KeyValuePair<string, string>> headers,
+            byte[] payload,
+            int? statusCode,
+            string? reasonPhrase,
+            bool decodePayload)
+            : base(timestamp, headers, payload, decodePayload)
         {
             StatusCode = statusCode;
             ReasonPhrase = reasonPhrase ?? string.Empty;
