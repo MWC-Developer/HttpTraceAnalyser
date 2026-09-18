@@ -61,7 +61,9 @@ namespace HttpTraceAnalyser.Model
                 [".har"] = path => new HarTraceFile(path),
                 [".etl"] = path => new EtlTraceFile(path),
                 [".trace"] = path => new EwsTraceFile(path),
-                [".json"] = path => new JsonTraceFile(path),
+                [".json"] = path => NetLogTraceFile.LooksLikeNetLog(path)
+                    ? new NetLogTraceFile(path)
+                    : new JsonTraceFile(path),
             };
 
         // Extensions that are ambiguous (no format is uniquely tied to them) and therefore

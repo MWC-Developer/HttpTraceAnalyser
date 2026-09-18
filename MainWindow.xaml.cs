@@ -3140,6 +3140,11 @@ namespace HttpTraceAnalyser
             {
                 return payload;
             }
+            catch (InvalidOperationException)
+            {
+                // BrotliStream reports malformed or already-decoded input this way.
+                return payload;
+            }
             catch (IOException)
             {
                 return payload;

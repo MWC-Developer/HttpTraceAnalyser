@@ -42,6 +42,8 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Folder Include="tools\local\NetLogProbe\" />
+    <Folder Include="tools\local\RedirectProbe\" />
     <Folder Include="Tools\OutlookETLParser\" />
   </ItemGroup>
 
@@ -49,6 +51,10 @@
     <Compile Remove="tools\local\**" />
     <None Remove="tools\local\**" />
     <EmbeddedResource Remove="tools\local\**" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include=".github\copilot-instructions.md" />
   </ItemGroup>
 
 </Project>
