@@ -51,6 +51,7 @@ namespace HttpTraceAnalyser
         // Default (checked) = wrap, so no unnecessary horizontal scroll bar is shown.
         private bool _summaryWrap = true;
         private bool _mapiWrap = true;
+        private bool _easWrap = true;
         private bool _restWrap = true;
         private bool _soapWrap = true;
 
@@ -2240,6 +2241,8 @@ namespace HttpTraceAnalyser
             ApplyRichTextBoxWrap(SummaryViewer, _summaryWrap);
             MapiViewer.Document = new FlowDocument();
             ApplyRichTextBoxWrap(MapiViewer, _mapiWrap);
+            EasViewer.Document = new FlowDocument();
+            ApplyRichTextBoxWrap(EasViewer, _easWrap);
             RestViewer.Document = new FlowDocument();
             ApplyRichTextBoxWrap(RestViewer, _restWrap);
             RestJsonTree.ItemsSource = null;
@@ -2394,6 +2397,7 @@ namespace HttpTraceAnalyser
         private const int RestTabIndex = 3;
         private const int SoapTabIndex = 4;
         private const int MapiTabIndex = 5;
+        private const int EasTabIndex = 6;
 
         private async void RequestList_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
@@ -2430,6 +2434,8 @@ namespace HttpTraceAnalyser
                 await PopulateResponseViewer(response);
                 MapiViewer.Document = BuildMapiDocument(request, response);
                 ApplyRichTextBoxWrap(MapiViewer, _mapiWrap);
+                EasViewer.Document = BuildEasDocument(request, response);
+                ApplyRichTextBoxWrap(EasViewer, _easWrap);
                 var (restDoc, restJsonRoots) = BuildRestDocument(request, response);
                 RestViewer.Document = restDoc;
                 ApplyRichTextBoxWrap(RestViewer, _restWrap);
@@ -2458,7 +2464,7 @@ namespace HttpTraceAnalyser
         private async Task PopulateRequestViewer(HttpRequest request)
         {
             _requestHeaders = request.Headers;
-            _requestPayload = request.Payload;
+            _requestPayload = GetDisplayPayload(request);
 
             var sb = new StringBuilder();
             sb.Append(request.Method).Append(' ').Append(request.Url?.ToString() ?? string.Empty).AppendLine();
@@ -2471,7 +2477,7 @@ namespace HttpTraceAnalyser
 
             if (hasPayload)
             {
-                var format = DetectPayloadFormat(request.Headers);
+                var format = request.DecodedEasWbxml is not null ? PayloadFormat.Xml : DetectPayloadFormat(request.Headers);
 
                 // Suppress format change event during population
                 _isPopulatingViewers = true;
@@ -2511,7 +2517,7 @@ namespace HttpTraceAnalyser
             }
 
             _responseHeaders = response.Headers;
-            _responsePayload = response.Payload;
+            _responsePayload = GetDisplayPayload(response);
 
             var sb = new StringBuilder();
             var status = GetResponseStatus(response);
@@ -2526,7 +2532,7 @@ namespace HttpTraceAnalyser
 
             if (hasPayload)
             {
-                var format = DetectPayloadFormat(response.Headers);
+                var format = response.DecodedEasWbxml is not null ? PayloadFormat.Xml : DetectPayloadFormat(response.Headers);
 
                 // Suppress format change event during population
                 _isPopulatingViewers = true;
@@ -2555,6 +2561,9 @@ namespace HttpTraceAnalyser
                 _responsePayloadNeedsRender = false;
             }
         }
+
+        private static byte[] GetDisplayPayload(HttpMessage message)
+            => message.DecodedEasWbxml is null ? message.Payload : Encoding.UTF8.GetBytes(message.DecodedEasWbxml);
 
         private void ApplyRequestPayloadLayout(bool hasPayload)
         {
@@ -2659,6 +2668,7 @@ namespace HttpTraceAnalyser
                 case RichTextBox rtb:
                     if (rtb == SummaryViewer) _summaryWrap = wrap;
                     else if (rtb == MapiViewer) _mapiWrap = wrap;
+                    else if (rtb == EasViewer) _easWrap = wrap;
                     else if (rtb == RestViewer) _restWrap = wrap;
                     else if (rtb == SoapViewer) _soapWrap = wrap;
                     ApplyRichTextBoxWrap(rtb, wrap);
@@ -3287,6 +3297,9 @@ namespace HttpTraceAnalyser
             if (MapiHttpDecoder.IsMapiHttp(request) || MapiHttpDecoder.IsMapiHttp(response))
                 detected.Add(("MAPI", MapiTabIndex));
 
+            if (EasAnalyzer.Analyze(request, response).IsEas)
+                detected.Add(("EAS", EasTabIndex));
+
             if (detected.Count == 0)
                 return;
 
@@ -3386,6 +3399,48 @@ namespace HttpTraceAnalyser
 
             if (respIsMapi && response is not null)
                 AppendMapiSection(doc, "Response", MapiHttpDecoder.Decode(response, isResponse: true), response.Payload);
+
+            return doc;
+        }
+
+        private static FlowDocument BuildEasDocument(HttpRequest request, HttpResponse? response)
+        {
+            var doc = NewDocument();
+            var analysis = EasAnalyzer.Analyze(request, response);
+            if (!analysis.IsEas)
+            {
+                doc.Blocks.Add(new Paragraph(new Run("(no Exchange ActiveSync content detected)")
+                { FontStyle = FontStyles.Italic }));
+                return doc;
+            }
+
+            AddSectionHeader(doc, "EAS command summary");
+            AddLine(doc, "Request command", analysis.Command ?? "(not identified)");
+            AddLine(doc, "HTTP method", request.Method);
+            if (response is not null)
+                AddLine(doc, "HTTP response", GetResponseStatus(response));
+
+            AddSectionHeader(doc, "Response command status");
+            if (analysis.ResponseStatuses.Count == 0)
+            {
+                AddLine(doc, "EAS status", "(not present in the decoded response)");
+            }
+            else
+            {
+                foreach (var status in analysis.ResponseStatuses)
+                    AddLine(doc, status.Location, status.Value);
+            }
+
+            AddSectionHeader(doc, "Diagnostics");
+            if (analysis.Diagnostics.Count == 0)
+            {
+                AddLine(doc, "Result", "No common EAS HTTP or protocol issues detected.");
+            }
+            else
+            {
+                foreach (var diagnostic in analysis.Diagnostics)
+                    AddLine(doc, diagnostic.Severity, diagnostic.Message);
+            }
 
             return doc;
         }

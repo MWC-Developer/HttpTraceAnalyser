@@ -397,7 +397,11 @@ namespace HttpTraceAnalyser.Model
                 ? abs
                 : new Uri(string.IsNullOrEmpty(urlText) ? "about:blank" : urlText, UriKind.RelativeOrAbsolute);
 
-            return new HttpRequest(timestamp, headers, payload, method, url);
+            var decodedEasWbxml = EasWbxmlDecoder.IsEas(headers, url) &&
+                EasWbxmlDecoder.TryDecode(payload, headers, out var decoded)
+                ? decoded
+                : null;
+            return new HttpRequest(timestamp, headers, payload, method, url, decodedEasWbxml);
         }
 
         /// <summary>Rebuilds an <see cref="HttpResponse"/> from the given row (null if none was captured).</summary>
@@ -421,7 +425,11 @@ namespace HttpTraceAnalyser.Model
                 ? new DateTimeOffset(DateTime.SpecifyKind(ts, DateTimeKind.Local))
                 : (DateTimeOffset?)null;
 
-            return new HttpResponse(timestamp, headers, payload, statusCode, reason);
+            var decodedEasWbxml = EasWbxmlDecoder.IsEas(headers, null) &&
+                EasWbxmlDecoder.TryDecode(payload, headers, out var decoded)
+                ? decoded
+                : null;
+            return new HttpResponse(timestamp, headers, payload, statusCode, reason, decodedEasWbxml);
         }
 
         private static string SerializeHeaders(IReadOnlyList<KeyValuePair<string, string>> headers)

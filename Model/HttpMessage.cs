@@ -11,11 +11,13 @@ namespace HttpTraceAnalyser.Model
         protected HttpMessage(
             DateTimeOffset? timestamp,
             IReadOnlyList<KeyValuePair<string, string>> headers,
-            byte[] payload)
+            byte[] payload,
+            string? decodedEasWbxml = null)
         {
             Timestamp = timestamp;
             Headers = headers ?? Array.Empty<KeyValuePair<string, string>>();
             Payload = payload ?? Array.Empty<byte>();
+            DecodedEasWbxml = decodedEasWbxml;
         }
 
         /// <summary>Time the message was captured, if known.</summary>
@@ -26,6 +28,9 @@ namespace HttpTraceAnalyser.Model
 
         /// <summary>Raw message body bytes.</summary>
         public byte[] Payload { get; }
+
+        /// <summary>Decoded Exchange ActiveSync WBXML body, when applicable.</summary>
+        public string? DecodedEasWbxml { get; }
     }
 
     public sealed class HttpRequest : HttpMessage
@@ -35,8 +40,9 @@ namespace HttpTraceAnalyser.Model
             IReadOnlyList<KeyValuePair<string, string>> headers,
             byte[] payload,
             string method,
-            Uri url)
-            : base(timestamp, headers, payload)
+            Uri url,
+            string? decodedEasWbxml = null)
+            : base(timestamp, headers, payload, decodedEasWbxml)
         {
             Method = method ?? string.Empty;
             Url = url;
@@ -70,8 +76,9 @@ namespace HttpTraceAnalyser.Model
             IReadOnlyList<KeyValuePair<string, string>> headers,
             byte[] payload,
             int? statusCode = null,
-            string? reasonPhrase = null)
-            : base(timestamp, headers, payload)
+            string? reasonPhrase = null,
+            string? decodedEasWbxml = null)
+            : base(timestamp, headers, payload, decodedEasWbxml)
         {
             StatusCode = statusCode;
             ReasonPhrase = reasonPhrase ?? string.Empty;

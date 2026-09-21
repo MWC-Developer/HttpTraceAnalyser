@@ -118,8 +118,13 @@ namespace HttpTraceAnalyser.Model
 
             var headers = ParseHeaders(lines);
             var url = BuildUrl(method, target, headers);
+            string? decodedEasWbxml = null;
+            if (EasWbxmlDecoder.TryDecode(payload, headers, out var decoded))
+            {
+                decodedEasWbxml = decoded;
+            }
 
-            return new HttpRequest(timestamp, headers, payload, method, url);
+            return new HttpRequest(timestamp, headers, payload, method, url, decodedEasWbxml);
         }
 
         private static HttpResponse ParseResponse(ZipArchiveEntry entry, DateTimeOffset? timestamp)
@@ -143,7 +148,12 @@ namespace HttpTraceAnalyser.Model
                 }
             }
 
-            return new HttpResponse(timestamp, headers, payload, statusCode, reason);
+            string? decodedEasWbxml = null;
+            if (EasWbxmlDecoder.TryDecode(payload, headers, out var decoded))
+            {
+                decodedEasWbxml = decoded;
+            }
+            return new HttpResponse(timestamp, headers, payload, statusCode, reason, decodedEasWbxml);
         }
 
         private static byte[] ReadAll(ZipArchiveEntry entry)

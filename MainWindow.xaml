@@ -867,6 +867,22 @@
                         </RichTextBox.ContextMenu>
                     </RichTextBox>
                 </TabItem>
+                <TabItem x:Name="EasTab" Header="EAS">
+                    <RichTextBox x:Name="EasViewer" IsReadOnly="True"
+                                 VerticalScrollBarVisibility="Auto"
+                                 HorizontalScrollBarVisibility="Auto"
+                                 FontFamily="Consolas">
+                        <RichTextBox.ContextMenu>
+                            <ContextMenu>
+                                <MenuItem Command="ApplicationCommands.Copy" />
+                                <MenuItem Command="ApplicationCommands.SelectAll" />
+                                <Separator />
+                                <MenuItem Header="Word wrap" IsCheckable="True" IsChecked="True"
+                                          Click="WordWrap_Toggled" />
+                            </ContextMenu>
+                        </RichTextBox.ContextMenu>
+                    </RichTextBox>
+                </TabItem>
             </TabControl>
 
             <GridSplitter x:Name="HorizontalWorkspaceSplitter"
