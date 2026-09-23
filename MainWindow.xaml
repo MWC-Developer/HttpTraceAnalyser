@@ -17,9 +17,11 @@
         Foreground="{DynamicResource TextFillColorPrimaryBrush}">
     <Window.CommandBindings>
         <CommandBinding Command="ApplicationCommands.Find" Executed="FindCommand_Executed" />
+        <CommandBinding Command="ApplicationCommands.Open" Executed="OpenTraceCommand_Executed" />
     </Window.CommandBindings>
     <Window.InputBindings>
         <KeyBinding Key="F" Modifiers="Control" Command="ApplicationCommands.Find" />
+        <KeyBinding Key="O" Modifiers="Control" Command="ApplicationCommands.Open" />
     </Window.InputBindings>
     <Window.Resources>
         <!-- Ribbon-style toolbar resources -->
@@ -104,6 +106,37 @@
                             Style="{StaticResource RibbonButtonStyle}"
                             Click="AppSettingsButton_Click" />
                     <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                        <Border Style="{StaticResource RibbonGroupStyle}">
+                            <StackPanel Orientation="Vertical">
+                                <StackPanel Orientation="Horizontal">
+                                    <Button x:Name="OpenTraceButton" Content="Open Trace"
+                                            Tag="&#xE8E5;"
+                                            Style="{StaticResource RibbonButtonStyle}"
+                                            ToolTip="Open a trace file (Ctrl+O)"
+                                            Click="AddSessionButton_Click" />
+                                </StackPanel>
+                                <TextBlock Text="File" Style="{StaticResource RibbonGroupLabelStyle}" />
+                            </StackPanel>
+                        </Border>
+
+                        <Border Style="{StaticResource RibbonGroupStyle}">
+                            <StackPanel Orientation="Vertical">
+                                <StackPanel Orientation="Horizontal">
+                                    <Button x:Name="ToggleLayoutButton" Content="Horizontal"
+                                            Tag="&#xE8A0;"
+                                            Style="{StaticResource RibbonButtonStyle}"
+                                            ToolTip="Switch to a horizontal layout"
+                                            Click="ToggleLayoutButton_Click" />
+                                    <Button x:Name="PopOutViewerButton" Content="Pop Out"
+                                            Tag="&#xE17C;"
+                                            Style="{StaticResource RibbonButtonStyle}"
+                                            ToolTip="Open the viewer in a separate window"
+                                            Click="PopOutViewerButton_Click" />
+                                </StackPanel>
+                                <TextBlock Text="Layout" Style="{StaticResource RibbonGroupLabelStyle}" />
+                            </StackPanel>
+                        </Border>
+
                         <!-- View group -->
                         <Border Style="{StaticResource RibbonGroupStyle}">
                             <StackPanel Orientation="Vertical">
@@ -974,7 +1007,8 @@
                         </Grid>
                         <GridSplitter Grid.Column="1" Width="4" HorizontalAlignment="Stretch"
                                       VerticalAlignment="Stretch"
-                                      Background="{DynamicResource ControlFillColorDefaultBrush}" />
+                                       Background="{DynamicResource ControlFillColorDefaultBrush}"
+                                       DragCompleted="SplitDetailsPaneSplitter_DragCompleted" />
                         <Grid Grid.Column="2">
                             <Grid.RowDefinitions>
                                 <RowDefinition Height="Auto" />

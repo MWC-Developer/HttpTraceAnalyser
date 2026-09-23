@@ -30,6 +30,8 @@ namespace HttpTraceAnalyser
 
         public static bool UseSplitView { get; set; }
 
+        public static bool IsViewerPoppedOut { get; set; }
+
         /// <summary>
         /// Optional suffix distinguishing this instance's MCP named-pipe bridge from other running
         /// copies of the app (e.g. "1", "2"). Null/empty selects the default, well-known pipe
@@ -53,6 +55,7 @@ namespace HttpTraceAnalyser
                 ThemePreference = JsonConfigurationPersistence.ValidateEnum(
                     document.ThemePreference, nameof(document.ThemePreference));
                 UseSplitView = document.UseSplitView;
+                IsViewerPoppedOut = document.IsViewerPoppedOut;
                 McpPipeNameSuffix = string.IsNullOrWhiteSpace(document.McpPipeNameSuffix) ? null : document.McpPipeNameSuffix;
             }
             catch (InvalidDataException)
@@ -69,6 +72,7 @@ namespace HttpTraceAnalyser
                 Version = JsonConfigurationPersistence.CurrentVersion,
                 ThemePreference = ThemePreference,
                 UseSplitView = UseSplitView,
+                IsViewerPoppedOut = IsViewerPoppedOut,
                 McpPipeNameSuffix = McpPipeNameSuffix,
             };
 
@@ -89,6 +93,7 @@ namespace HttpTraceAnalyser
             public required int Version { get; set; }
             public ThemePreference ThemePreference { get; set; }
             public bool UseSplitView { get; set; }
+            public bool IsViewerPoppedOut { get; set; }
             public string? McpPipeNameSuffix { get; set; }
         }
     }

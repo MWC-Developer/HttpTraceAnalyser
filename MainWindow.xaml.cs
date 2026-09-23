@@ -102,6 +102,8 @@ namespace HttpTraceAnalyser
         private bool _isSplitView;
         private GridLength _sessionsLeftWidth = new(900);
         private GridLength _sessionsTopHeight = new(2, GridUnitType.Star);
+        private ViewerWindow? _viewerWindow;
+        private bool _isClosing;
 
         private FrameworkElement[] _middleMouseScrollTargets = [];
         private FrameworkElement? _middleMouseScrollTarget;
@@ -166,8 +168,12 @@ namespace HttpTraceAnalyser
             {
                 if (AppSettings.UseSplitView)
                     await SetViewLayoutAsync(useSplitView: true);
+
+                if (AppSettings.IsViewerPoppedOut)
+                    await PopOutViewerAsync();
             };
             SourceInitialized += MainWindow_SourceInitialized;
+            Closing += (_, _) => _isClosing = true;
 
             // FilterRuleSet/HighlightRuleSet forward to whichever session is currently active, which
             // changes over time (session switch), so subscribe to the active session's collections
@@ -190,6 +196,11 @@ namespace HttpTraceAnalyser
                 ThemeManager.ThemeChanged -= OnThemeChanged;
                 StopMiddleMouseAutoScroll();
                 _windowSource?.RemoveHook(WindowMessageHook);
+                if (_viewerWindow is not null)
+                {
+                    _viewerWindow.Closed -= ViewerWindow_Closed;
+                    _viewerWindow.Close();
+                }
             };
 
             RefreshSessionsList();
@@ -909,6 +920,79 @@ namespace HttpTraceAnalyser
                 await McpHostManager.StartAsync();
         }
 
+        private async void ToggleLayoutButton_Click(object sender, RoutedEventArgs e)
+        {
+            DockViewer();
+            bool useSplitView = !_isSplitView;
+            await SetViewLayoutAsync(useSplitView);
+            AppSettings.UseSplitView = useSplitView;
+            AppSettings.Save();
+            UpdateLayoutToggle();
+        }
+
+        private void UpdateLayoutToggle()
+        {
+            ToggleLayoutButton.Content = _isSplitView ? "Vertical" : "Horizontal";
+            ToggleLayoutButton.ToolTip = _isSplitView
+                ? "Switch to a vertical layout"
+                : "Switch to a horizontal layout";
+        }
+
+        private async void PopOutViewerButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (_viewerWindow is not null)
+            {
+                DockViewer();
+                return;
+            }
+
+            await PopOutViewerAsync();
+            AppSettings.IsViewerPoppedOut = true;
+            AppSettings.Save();
+        }
+
+        private async Task PopOutViewerAsync()
+        {
+            if (_viewerWindow is not null)
+                return;
+
+            await SetViewLayoutAsync(useSplitView: false);
+            WorkspaceGrid.Children.Remove(MainTabControl);
+
+            _viewerWindow = new ViewerWindow { Owner = this };
+            _viewerWindow.Host.Content = MainTabControl;
+            _viewerWindow.Closed += ViewerWindow_Closed;
+            SessionsPane.SetValue(Grid.ColumnSpanProperty, 3);
+            PopOutViewerButton.Content = "Dock Viewer";
+            _viewerWindow.Show();
+        }
+
+        private void DockViewer()
+        {
+            _viewerWindow?.Close();
+        }
+
+        private void ViewerWindow_Closed(object? sender, EventArgs e)
+        {
+            if (sender is not ViewerWindow viewerWindow)
+                return;
+
+            viewerWindow.Closed -= ViewerWindow_Closed;
+            viewerWindow.Host.Content = null;
+            WorkspaceGrid.Children.Add(MainTabControl);
+            Grid.SetRow(MainTabControl, 0);
+            Grid.SetColumn(MainTabControl, 5);
+            SessionsPane.ClearValue(Grid.ColumnSpanProperty);
+            _viewerWindow = null;
+            PopOutViewerButton.Content = "Pop Out";
+
+            if (!_isClosing)
+            {
+                AppSettings.IsViewerPoppedOut = false;
+                AppSettings.Save();
+            }
+        }
+
         private async void McpServerButton_Checked(object sender, RoutedEventArgs e)
         {
             McpServerButton.IsEnabled = false;
@@ -953,7 +1037,10 @@ namespace HttpTraceAnalyser
         private async Task SetViewLayoutAsync(bool useSplitView)
         {
             if (_isSplitView == useSplitView)
+            {
+                UpdateLayoutToggle();
                 return;
+            }
 
             if (useSplitView)
             {
@@ -1025,6 +1112,8 @@ namespace HttpTraceAnalyser
                 MainTabControl.Visibility = Visibility.Visible;
                 _isSplitView = false;
             }
+
+            UpdateLayoutToggle();
         }
 
         private static void MoveTabContent(TabItem source, TabItem destination)
@@ -1032,6 +1121,15 @@ namespace HttpTraceAnalyser
             var content = source.Content;
             source.Content = null;
             destination.Content = content;
+        }
+
+        private void SplitDetailsPaneSplitter_DragCompleted(object sender, System.Windows.Controls.Primitives.DragCompletedEventArgs e)
+        {
+            var requestWidth = SplitDetailsPane.ColumnDefinitions[0].ActualWidth;
+            var responseWidth = SplitDetailsPane.ColumnDefinitions[2].ActualWidth;
+
+            SplitDetailsPane.ColumnDefinitions[0].Width = new GridLength(requestWidth, GridUnitType.Star);
+            SplitDetailsPane.ColumnDefinitions[2].Width = new GridLength(responseWidth, GridUnitType.Star);
         }
 
         private async Task RenderVisibleSplitPayloads()
@@ -1815,6 +1913,11 @@ namespace HttpTraceAnalyser
                 return;
 
             await LoadTraceFileAsync(dialog.FileName).ConfigureAwait(true);
+        }
+
+        private void OpenTraceCommand_Executed(object sender, ExecutedRoutedEventArgs e)
+        {
+            AddSessionButton_Click(sender, e);
         }
 
         /// <summary>Display row for the session explorer's <see cref="SessionsListBox"/>.</summary>
