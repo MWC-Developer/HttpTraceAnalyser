@@ -42,7 +42,7 @@ namespace HttpTraceAnalyser
         private byte[]? _responsePayload;
         private IReadOnlyList<KeyValuePair<string, string>>? _responseHeaders;
 
-        private enum PayloadFormat { PlainText = 0, Json = 1, Xml = 2, Html = 3, JavaScript = 4, Image = 5, Svg = 6 }
+        private enum PayloadFormat { PlainText = 0, Json = 1, Xml = 2, Html = 3, JavaScript = 4, Image = 5, Svg = 6, Binary = 7 }
         private enum FindScope { AllSessions = 0, RequestHeaders = 1, RequestBody = 2, ResponseHeaders = 3, ResponseBody = 4 }
 
         // Word-wrap state for the RichTextBox viewers (Summary, Mapi). RichTextBox has
@@ -77,6 +77,8 @@ namespace HttpTraceAnalyser
         private bool _responsePayloadNeedsRender;
         private PayloadFormat _pendingRequestFormat;
         private PayloadFormat _pendingResponseFormat;
+        private PayloadFormat _base64DecodedFormat;
+        private byte[]? _base64DecodedPayload;
 
         // Track which tabs have been activated at least once to handle initial visibility
         private bool _requestTabEverActivated;
@@ -232,6 +234,8 @@ namespace HttpTraceAnalyser
         {
             DisableLinkDetectionForEditor(RequestPayloadEditor);
             DisableLinkDetectionForEditor(ResponsePayloadEditor);
+            DisableLinkDetectionForEditor(Base64SourceEditor);
+            DisableLinkDetectionForEditor(Base64DecodedEditor);
         }
 
         /// <summary>
@@ -963,6 +967,7 @@ namespace HttpTraceAnalyser
                 MoveTabContent(RestTab, TopRestTab);
                 MoveTabContent(SoapTab, TopSoapTab);
                 MoveTabContent(MapiTab, TopMapiTab);
+                MoveTabContent(Base64Tab, TopBase64Tab);
 
                 SessionsColumn.MinWidth = 0;
                 SessionsColumn.Width = new GridLength(1, GridUnitType.Star);
@@ -1001,6 +1006,7 @@ namespace HttpTraceAnalyser
                 MoveTabContent(TopRestTab, RestTab);
                 MoveTabContent(TopSoapTab, SoapTab);
                 MoveTabContent(TopMapiTab, MapiTab);
+                MoveTabContent(TopBase64Tab, Base64Tab);
 
                 SessionsPane.ClearValue(Grid.ColumnSpanProperty);
                 SessionsColumn.MinWidth = 400;
@@ -2249,6 +2255,15 @@ namespace HttpTraceAnalyser
             RestJsonTree.Visibility = Visibility.Collapsed;
             SoapViewer.Document = new FlowDocument();
             ApplyRichTextBoxWrap(SoapViewer, _soapWrap);
+            Base64SourceEditor.Text = string.Empty;
+            Base64DecodedEditor.Text = string.Empty;
+            Base64DecodedEditor.SyntaxHighlighting = null;
+            Base64DecodedImage.Source = null;
+            Base64DecodedSvg.StreamSource = null;
+            Base64DecodedImageScroll.Visibility = Visibility.Collapsed;
+            Base64DecodedSvgScroll.Visibility = Visibility.Collapsed;
+            _base64DecodedPayload = null;
+            _base64DecodedFormat = PayloadFormat.PlainText;
 
             _requestPayload = null;
             _requestHeaders = null;
@@ -2676,6 +2691,128 @@ namespace HttpTraceAnalyser
             }
         }
 
+        private async void PayloadBase64Decode_Click(object sender, RoutedEventArgs e)
+        {
+            if (sender is not MenuItem menuItem ||
+                (menuItem.Parent as ContextMenu)?.PlacementTarget is not ICSharpCode.AvalonEdit.TextEditor editor ||
+                string.IsNullOrWhiteSpace(editor.SelectedText))
+            {
+                return;
+            }
+
+            try
+            {
+                var decoded = Convert.FromBase64String(editor.SelectedText);
+                await ShowBase64DecodedContent(editor.SelectedText, decoded);
+            }
+            catch (FormatException)
+            {
+                MessageBox.Show(this, "The selected text is not valid Base64.", "Base64 Decode",
+                    MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
+        }
+
+        private async Task ShowBase64DecodedContent(string source, byte[] decoded)
+        {
+            Base64SourceEditor.Text = source;
+            _base64DecodedPayload = decoded;
+
+            var format = DetectBase64PayloadFormat(decoded);
+            _isPopulatingViewers = true;
+            try
+            {
+                Base64PayloadFormatCombo.SelectedIndex = (int)format;
+            }
+            finally
+            {
+                _isPopulatingViewers = false;
+            }
+
+            await RenderBase64Payload(format);
+
+            if (_isSplitView)
+                TopLayoutTabControl.SelectedItem = TopBase64Tab;
+            else
+                MainTabControl.SelectedItem = Base64Tab;
+        }
+
+        private async void Base64PayloadFormat_Changed(object sender, SelectionChangedEventArgs e)
+        {
+            if (_isPopulatingViewers || _base64DecodedPayload is null)
+                return;
+
+            await RenderBase64Payload((PayloadFormat)Base64PayloadFormatCombo.SelectedIndex);
+        }
+
+        private async Task RenderBase64Payload(PayloadFormat format)
+        {
+            if (_base64DecodedPayload is null)
+                return;
+
+            _base64DecodedFormat = format;
+            if (format == PayloadFormat.Binary)
+            {
+                ShowEditor(Base64DecodedEditor, Base64DecodedImageScroll, Base64DecodedSvgScroll);
+                Base64DecodedImage.Source = null;
+                Base64DecodedSvg.StreamSource = null;
+                Base64DecodedEditor.SyntaxHighlighting = null;
+                Base64DecodedEditor.Text = MapiHttpDecoder.HexDump(_base64DecodedPayload, 0, _base64DecodedPayload.Length);
+                Base64DecodedEditor.TextArea.Caret.Offset = 0;
+                Base64DecodedEditor.ScrollToHome();
+                return;
+            }
+
+            await RenderPayload(format, _base64DecodedPayload, headers: null,
+                Base64DecodedEditor, Base64DecodedImageScroll, Base64DecodedImage,
+                Base64DecodedSvgScroll, Base64DecodedSvg, showBusyIndicator: false);
+        }
+
+        private static PayloadFormat DetectBase64PayloadFormat(byte[] decoded)
+        {
+            if (TryLoadBitmap(decoded, out _))
+                return PayloadFormat.Image;
+
+            if (!TryDecodeText(decoded, out var text))
+                return PayloadFormat.Binary;
+
+            var trimmed = text.TrimStart();
+            if (trimmed.StartsWith("<svg", StringComparison.OrdinalIgnoreCase))
+                return PayloadFormat.Svg;
+            if (trimmed.StartsWith("<!doctype html", StringComparison.OrdinalIgnoreCase) ||
+                trimmed.StartsWith("<html", StringComparison.OrdinalIgnoreCase))
+            {
+                return PayloadFormat.Html;
+            }
+            if (TryPrettyPrintJson(text, out _))
+                return PayloadFormat.Json;
+            if (TryPrettyPrintXml(text, out _))
+                return PayloadFormat.Xml;
+            return PayloadFormat.PlainText;
+        }
+
+        private static bool TryDecodeText(byte[] bytes, out string text)
+        {
+            try
+            {
+                text = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true).GetString(bytes);
+                foreach (var character in text)
+                {
+                    if (char.IsControl(character) && character is not '\r' and not '\n' and not '\t')
+                    {
+                        text = string.Empty;
+                        return false;
+                    }
+                }
+
+                return true;
+            }
+            catch (DecoderFallbackException)
+            {
+                text = string.Empty;
+                return false;
+            }
+        }
+
         private static void ApplyRichTextBoxWrap(RichTextBox rtb, bool wrap)
         {
             if (rtb.Document is null)
@@ -3009,6 +3146,13 @@ namespace HttpTraceAnalyser
                 {
                     ApplySyntaxHighlightingAsync(ResponsePayloadEditor, responseFormat);
                 }
+            }
+
+            if (!string.IsNullOrEmpty(Base64DecodedEditor.Text) &&
+                Base64DecodedEditor.Text.Length <= LargePayloadThreshold &&
+                _base64DecodedFormat is PayloadFormat.Json or PayloadFormat.Xml)
+            {
+                ApplySyntaxHighlightingAsync(Base64DecodedEditor, _base64DecodedFormat);
             }
         }
 

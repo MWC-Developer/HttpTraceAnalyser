@@ -70,6 +70,8 @@ namespace HttpTraceAnalyser.Model
                 var text = GetString(postData, "text");
                 if (!string.IsNullOrEmpty(text))
                     payload = Encoding.UTF8.GetBytes(text);
+                else if (postData.TryGetProperty("params", out var parameters) && parameters.ValueKind == JsonValueKind.Array)
+                    payload = GetFormDataPayload(parameters);
             }
 
             var url = Uri.TryCreate(urlText, UriKind.Absolute, out var abs)
@@ -77,6 +79,23 @@ namespace HttpTraceAnalyser.Model
                 : new Uri(string.IsNullOrEmpty(urlText) ? "about:blank" : urlText, UriKind.RelativeOrAbsolute);
 
             return new HttpRequest(timestamp, headers, payload, method, url);
+        }
+
+        private static byte[] GetFormDataPayload(JsonElement parameters)
+        {
+            var text = new StringBuilder();
+            foreach (var parameter in parameters.EnumerateArray())
+            {
+                var name = GetString(parameter, "name");
+                if (string.IsNullOrEmpty(name))
+                    continue;
+
+                if (text.Length > 0)
+                    text.AppendLine();
+                text.Append(name).Append('=').Append(GetString(parameter, "value") ?? string.Empty);
+            }
+
+            return text.Length == 0 ? Array.Empty<byte>() : Encoding.UTF8.GetBytes(text.ToString());
         }
 
         private static HttpResponse ParseResponse(JsonElement el, DateTimeOffset? timestamp)

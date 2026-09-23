@@ -607,6 +607,7 @@
                                     <ContextMenu>
                                         <MenuItem Command="ApplicationCommands.Copy" />
                                         <MenuItem Command="ApplicationCommands.SelectAll" />
+                                        <MenuItem Header="Base64 Decode" Click="PayloadBase64Decode_Click" />
                                         <Separator />
                                         <MenuItem Header="Word wrap" IsCheckable="True"
                                                   Click="WordWrap_Toggled" />
@@ -685,6 +686,7 @@
                                 <ContextMenu>
                                     <MenuItem Command="ApplicationCommands.Copy" />
                                     <MenuItem Command="ApplicationCommands.SelectAll" />
+                                        <MenuItem Header="Base64 Decode" Click="PayloadBase64Decode_Click" />
                                     <Separator />
                                     <MenuItem Header="Word wrap" IsCheckable="True"
                                               Click="WordWrap_Toggled" />
@@ -883,6 +885,65 @@
                         </RichTextBox.ContextMenu>
                     </RichTextBox>
                 </TabItem>
+                <TabItem x:Name="Base64Tab" Header="Base64">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="*" MinHeight="100" />
+                            <RowDefinition Height="4" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="2*" MinHeight="100" />
+                        </Grid.RowDefinitions>
+                        <TextBlock Text="Source Base64" FontWeight="Bold" Margin="4,4,4,2" />
+                        <avalonedit:TextEditor Grid.Row="1" x:Name="Base64SourceEditor"
+                                               IsReadOnly="True" ShowLineNumbers="True"
+                                               FontFamily="Consolas"
+                                               VerticalScrollBarVisibility="Auto"
+                                               HorizontalScrollBarVisibility="Auto" />
+                        <GridSplitter Grid.Row="2" Height="4" HorizontalAlignment="Stretch"
+                                      VerticalAlignment="Center"
+                                      Background="{DynamicResource ControlFillColorDefaultBrush}" />
+                        <StackPanel Grid.Row="3" Orientation="Horizontal" Margin="4,4,4,2">
+                            <TextBlock Text="Decoded content format:" VerticalAlignment="Center"
+                                       Margin="0,0,6,0" />
+                            <ComboBox x:Name="Base64PayloadFormatCombo" Width="120"
+                                      SelectionChanged="Base64PayloadFormat_Changed">
+                                <ComboBoxItem Content="Plain text" />
+                                <ComboBoxItem Content="JSON" />
+                                <ComboBoxItem Content="XML" />
+                                <ComboBoxItem Content="HTML" />
+                                <ComboBoxItem Content="JavaScript" />
+                                <ComboBoxItem Content="Image" />
+                                <ComboBoxItem Content="SVG" />
+                                <ComboBoxItem Content="Binary" />
+                            </ComboBox>
+                        </StackPanel>
+                        <Grid Grid.Row="4">
+                            <avalonedit:TextEditor x:Name="Base64DecodedEditor"
+                                                   IsReadOnly="True" ShowLineNumbers="True"
+                                                   FontFamily="Consolas"
+                                                   VerticalScrollBarVisibility="Auto"
+                                                   HorizontalScrollBarVisibility="Auto" />
+                            <ScrollViewer x:Name="Base64DecodedImageScroll"
+                                          HorizontalScrollBarVisibility="Auto"
+                                          VerticalScrollBarVisibility="Auto"
+                                          Background="White"
+                                          Visibility="Collapsed">
+                                <Image x:Name="Base64DecodedImage" Stretch="None"
+                                       HorizontalAlignment="Left" VerticalAlignment="Top" />
+                            </ScrollViewer>
+                            <ScrollViewer x:Name="Base64DecodedSvgScroll"
+                                          HorizontalScrollBarVisibility="Auto"
+                                          VerticalScrollBarVisibility="Auto"
+                                          Background="White"
+                                          Visibility="Collapsed">
+                                <svgc:SvgViewbox x:Name="Base64DecodedSvg"
+                                                 HorizontalAlignment="Left"
+                                                 VerticalAlignment="Top" />
+                            </ScrollViewer>
+                        </Grid>
+                    </Grid>
+                </TabItem>
             </TabControl>
 
             <GridSplitter x:Name="HorizontalWorkspaceSplitter"
@@ -927,6 +988,7 @@
                 <TabItem x:Name="TopRestTab" Header="REST" />
                 <TabItem x:Name="TopSoapTab" Header="SOAP" />
                 <TabItem x:Name="TopMapiTab" Header="MAPI" />
+                <TabItem x:Name="TopBase64Tab" Header="Base64" />
             </TabControl>
         </Grid>
     </DockPanel>
