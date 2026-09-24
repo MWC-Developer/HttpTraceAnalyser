@@ -7,8 +7,7 @@ using System.Text.Json;
 namespace HttpTraceAnalyser.Model
 {
     /// <summary>
-    /// Loads HTTP requests exported by the EdgeCapture browser extension. The extension captures
-    /// request metadata and bodies, but does not currently export response data.
+    /// Loads HTTP exchanges exported by the EdgeCapture browser extension.
     /// </summary>
     public sealed class EdgeCaptureTraceFile : HttpTraceFile
     {
@@ -23,9 +22,13 @@ namespace HttpTraceAnalyser.Model
                 throw new InvalidDataException("The EdgeCapture export must contain a traces array.");
             }
 
+            var responsesByRequestId = IndexResponses(traces);
             foreach (var trace in traces.EnumerateArray())
             {
                 if (trace.ValueKind != JsonValueKind.Object)
+                    continue;
+
+                if (GetString(trace, "requestId") is not null)
                     continue;
 
                 var method = GetString(trace, "method");
@@ -40,8 +43,48 @@ namespace HttpTraceAnalyser.Model
                     method,
                     ParseUrl(urlText, GetString(trace, "pageUrl") ?? GetString(trace, "frameUrl")));
 
-                AddRow(request, null);
+                var requestId = GetString(trace, "id");
+                var response = !string.IsNullOrWhiteSpace(requestId) &&
+                    responsesByRequestId.TryGetValue(requestId, out var responseTrace)
+                    ? CreateResponse(responseTrace)
+                    : null;
+
+                AddRow(request, response);
             }
+        }
+
+        private static Dictionary<string, JsonElement> IndexResponses(JsonElement traces)
+        {
+            var responsesByRequestId = new Dictionary<string, JsonElement>(StringComparer.Ordinal);
+            foreach (var trace in traces.EnumerateArray())
+            {
+                if (trace.ValueKind != JsonValueKind.Object)
+                    continue;
+
+                var requestId = GetString(trace, "requestId");
+                if (!string.IsNullOrWhiteSpace(requestId))
+                    responsesByRequestId.TryAdd(requestId, trace);
+            }
+
+            return responsesByRequestId;
+        }
+
+        private static HttpResponse CreateResponse(JsonElement trace)
+        {
+            int? statusCode = null;
+            if (trace.TryGetProperty("status", out var status) &&
+                status.ValueKind == JsonValueKind.Number &&
+                status.TryGetInt32(out var parsedStatus))
+            {
+                statusCode = parsedStatus;
+            }
+
+            return new HttpResponse(
+                GetTimestamp(trace),
+                ParseHeaders(trace),
+                ParseBody(trace),
+                statusCode,
+                GetString(trace, "statusText"));
         }
 
         public static bool LooksLikeEdgeCapture(string filePath)
