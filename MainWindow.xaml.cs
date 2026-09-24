@@ -1113,6 +1113,7 @@ namespace HttpTraceAnalyser
                 _isSplitView = false;
             }
 
+            UpdateCollapsedExplorerRail();
             UpdateLayoutToggle();
         }
 
@@ -1945,17 +1946,33 @@ namespace HttpTraceAnalyser
             {
                 _expandedExplorerWidth = ExplorerColumn.Width.Value;
                 SessionsExplorerPane.Visibility = Visibility.Collapsed;
+                ExplorerColumn.MinWidth = 0;
                 ExplorerColumn.Width = new GridLength(0);
                 ExplorerSplitterColumn.Width = new GridLength(0);
                 ExplorerRail.Visibility = Visibility.Visible;
+                UpdateCollapsedExplorerRail();
             }
             else
             {
+                ExplorerColumn.MinWidth = 150;
                 ExplorerColumn.Width = new GridLength(_expandedExplorerWidth);
                 ExplorerSplitterColumn.Width = GridLength.Auto;
+                ExplorerRailColumn.Width = GridLength.Auto;
+                Grid.SetColumn(ExplorerRail, 0);
+                Panel.SetZIndex(ExplorerRail, 0);
                 SessionsExplorerPane.Visibility = Visibility.Visible;
                 ExplorerRail.Visibility = Visibility.Collapsed;
             }
+        }
+
+        private void UpdateCollapsedExplorerRail()
+        {
+            if (SessionsExplorerPane.Visibility == Visibility.Visible)
+                return;
+
+            ExplorerRailColumn.Width = GridLength.Auto;
+            Grid.SetColumn(ExplorerRail, 0);
+            Panel.SetZIndex(ExplorerRail, 0);
         }
 
         private void RefreshSessionsList()
@@ -2549,7 +2566,7 @@ namespace HttpTraceAnalyser
                 SummaryViewer.Document = BuildSummary(request, response);
                 ApplyRichTextBoxWrap(SummaryViewer, _summaryWrap);
                 await PopulateRequestViewer(request);
-                await PopulateResponseViewer(response);
+                await PopulateResponseViewer(response, request.Url);
                 MapiViewer.Document = BuildMapiDocument(request, response);
                 ApplyRichTextBoxWrap(MapiViewer, _mapiWrap);
                 EasViewer.Document = BuildEasDocument(request, response);
@@ -2591,11 +2608,11 @@ namespace HttpTraceAnalyser
 
             bool hasPayload = _requestPayload is { Length: > 0 };
             ApplyRequestPayloadLayout(hasPayload);
-            RequestContentTypeText.Text = GetContentType(request.Headers);
+            RequestContentTypeText.Text = GetContentType(request.Headers, request.Url);
 
             if (hasPayload)
             {
-                var format = request.DecodedEasWbxml is not null ? PayloadFormat.Xml : DetectPayloadFormat(request.Headers);
+                var format = request.DecodedEasWbxml is not null ? PayloadFormat.Xml : DetectPayloadFormat(request.Headers, request.Url);
 
                 // Suppress format change event during population
                 _isPopulatingViewers = true;
@@ -2621,7 +2638,7 @@ namespace HttpTraceAnalyser
             }
         }
 
-        private async Task PopulateResponseViewer(HttpResponse? response)
+        private async Task PopulateResponseViewer(HttpResponse? response, Uri? requestUrl)
         {
             if (response is null)
             {
@@ -2646,11 +2663,11 @@ namespace HttpTraceAnalyser
 
             bool hasPayload = _responsePayload is { Length: > 0 };
             ApplyResponsePayloadLayout(hasPayload);
-            ResponseContentTypeText.Text = GetContentType(response.Headers);
+            ResponseContentTypeText.Text = GetContentType(response.Headers, requestUrl);
 
             if (hasPayload)
             {
-                var format = response.DecodedEasWbxml is not null ? PayloadFormat.Xml : DetectPayloadFormat(response.Headers);
+                var format = response.DecodedEasWbxml is not null ? PayloadFormat.Xml : DetectPayloadFormat(response.Headers, requestUrl);
 
                 // Suppress format change event during population
                 _isPopulatingViewers = true;
@@ -3038,6 +3055,14 @@ namespace HttpTraceAnalyser
                             editor.SyntaxHighlighting = null;
                         }
                         return false;
+
+                    case PayloadFormat.Binary:
+                        ShowEditor(editor, imageScroll, svgScroll);
+                        editor.SyntaxHighlighting = null;
+                        editor.Text = MapiHttpDecoder.HexDump(displayPayload, 0, displayPayload.Length);
+                        editor.TextArea.Caret.Offset = 0;
+                        editor.ScrollToHome();
+                        return false;
                 }
 
                 // Text-based formats route through the AvalonEdit editor.
@@ -3314,44 +3339,59 @@ namespace HttpTraceAnalyser
             }
         }
 
-        private static string GetContentType(IReadOnlyList<KeyValuePair<string, string>>? headers)
+        private static string GetContentType(IReadOnlyList<KeyValuePair<string, string>>? headers, Uri? requestUrl = null)
         {
-            if (headers is null)
-                return string.Empty;
-            foreach (var h in headers)
+            if (headers is not null)
             {
-                if (!string.Equals(h.Key, "Content-Type", StringComparison.OrdinalIgnoreCase))
-                    continue;
-                return h.Value ?? string.Empty;
+                foreach (var h in headers)
+                {
+                    if (!string.Equals(h.Key, "Content-Type", StringComparison.OrdinalIgnoreCase))
+                        continue;
+                    if (!string.IsNullOrWhiteSpace(h.Value))
+                        return h.Value;
+                }
             }
-            return string.Empty;
+
+            return GetContentTypeFromQuery(requestUrl);
         }
 
-        private static PayloadFormat DetectPayloadFormat(IReadOnlyList<KeyValuePair<string, string>>? headers)
+        private static PayloadFormat DetectPayloadFormat(IReadOnlyList<KeyValuePair<string, string>>? headers, Uri? requestUrl = null)
         {
-            if (headers is null)
-                return PayloadFormat.PlainText;
-            foreach (var h in headers)
-            {
-                if (!string.Equals(h.Key, "Content-Type", StringComparison.OrdinalIgnoreCase))
-                    continue;
-                var v = h.Value ?? string.Empty;
-                if (v.Contains("svg", StringComparison.OrdinalIgnoreCase))
-                    return PayloadFormat.Svg;
-                if (v.StartsWith("image/", StringComparison.OrdinalIgnoreCase))
-                    return PayloadFormat.Image;
-                if (v.Contains("json", StringComparison.OrdinalIgnoreCase))
-                    return PayloadFormat.Json;
-                if (v.Contains("javascript", StringComparison.OrdinalIgnoreCase) ||
-                    v.Contains("ecmascript", StringComparison.OrdinalIgnoreCase))
-                    return PayloadFormat.JavaScript;
-                if (v.Contains("html", StringComparison.OrdinalIgnoreCase))
-                    return PayloadFormat.Html;
-                if (v.Contains("xml", StringComparison.OrdinalIgnoreCase))
-                    return PayloadFormat.Xml;
-                break;
-            }
+            var v = GetContentType(headers, requestUrl);
+            if (v.Contains("svg", StringComparison.OrdinalIgnoreCase))
+                return PayloadFormat.Svg;
+            if (v.StartsWith("image/", StringComparison.OrdinalIgnoreCase))
+                return PayloadFormat.Image;
+            if (v.Contains("binary", StringComparison.OrdinalIgnoreCase) ||
+                v.Contains("octet-stream", StringComparison.OrdinalIgnoreCase))
+                return PayloadFormat.Binary;
+            if (v.Contains("json", StringComparison.OrdinalIgnoreCase))
+                return PayloadFormat.Json;
+            if (v.Contains("javascript", StringComparison.OrdinalIgnoreCase) ||
+                v.Contains("ecmascript", StringComparison.OrdinalIgnoreCase))
+                return PayloadFormat.JavaScript;
+            if (v.Contains("html", StringComparison.OrdinalIgnoreCase))
+                return PayloadFormat.Html;
+            if (v.Contains("xml", StringComparison.OrdinalIgnoreCase))
+                return PayloadFormat.Xml;
             return PayloadFormat.PlainText;
+        }
+
+        private static string GetContentTypeFromQuery(Uri? requestUrl)
+        {
+            if (requestUrl is null || string.IsNullOrEmpty(requestUrl.Query))
+                return string.Empty;
+
+            foreach (var parameter in requestUrl.Query.TrimStart('?').Split('&'))
+            {
+                var parts = parameter.Split('=', 2);
+                if (parts.Length != 2 || !string.Equals(parts[0], "content-type", StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                return Uri.UnescapeDataString(parts[1]);
+            }
+
+            return string.Empty;
         }
 
         /// <summary>
